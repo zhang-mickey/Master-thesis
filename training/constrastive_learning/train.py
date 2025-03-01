@@ -13,10 +13,9 @@ from sklearn.model_selection import train_test_split
 
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
-
 # Add the project root to sys.path
 sys.path.append(project_root)
-
+from lib.dataset.contrastiveDataset import SmokeContrastiveDataset
 from lib.dataset.SmokeDataset import *
 from lib.network.backbone import choose_backbone
 from lib.utils.splitdataset import *
@@ -29,12 +28,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Supervised learning")
     parser.add_argument("--json_path", type=str, default="smoke-segmentation.v5i.coco-segmentation/test/_annotations.coco.json",help="Path to COCO annotations JSON file")
     parser.add_argument("--image_folder", type=str, default="smoke-segmentation.v5i.coco-segmentation/test/", help="Path to the image dataset folder")
-    parser.add_argument("--save_model_path", type=str, default="model/model_full.pth", help="Path to save the trained model")
+    parser.add_argument("--save_model_path", type=str, default="model/model_constrastive_learning.pth", help="Path to save the trained model")
     parser.add_argument("--batch_size", type=int, default=8,help="training batch size")
     parser.add_argument("--num_epochs", type=int, default=50, help="epoch number")
     return parser.parse_args()
 
-if __name__ == "__main__":
+def train():
     args = parse_args()
 
     # ---- preprocess ----
@@ -50,9 +49,9 @@ if __name__ == "__main__":
     # dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
     # Load dataset
-    train_dataset = SmokeDataset(args.json_path, args.image_folder, transform=image_transform, mask_transform=mask_transform)
-    val_dataset = SmokeDataset(args.json_path, args.image_folder, transform=image_transform, mask_transform=mask_transform)
-    test_dataset = SmokeDataset(args.json_path, args.image_folder, transform=image_transform, mask_transform=mask_transform)
+    train_dataset = SmokeContrastiveDataset(args.json_path, args.image_folder, transform=image_transform)
+    val_dataset = SmokeContrastiveDataset(args.json_path, args.image_folder, transform=image_transform)
+    test_dataset = SmokeContrastiveDataset(args.json_path, args.image_folder, transform=image_transform)
 
     # Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -67,7 +66,7 @@ if __name__ == "__main__":
     model.to(device)
 
     # ---- Define Loss & Optimizer ----
-    criterion = Loss()
+    criterion = TripletLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
     # ---- Training Loop ----
@@ -75,16 +74,24 @@ if __name__ == "__main__":
     for epoch in range(1,(args.num_epochs+1)):
         model.train()
         running_loss = 0.0
-        for i,(images, masks) in enumerate(train_loader):
+        for i,(anchor, positive, negative, anchor_label) in enumerate(train_loader):
             # if i >= max_batches:
             #     break  # Stop after two batches
 
-            images = images.to(device)
-            masks = masks.to(device)
+            anchor = anchor.to(device)
+            positive = positive.to(device)
+            negative = negative.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs.squeeze(1), masks.squeeze(1))  # Remove channel dimension
+
+            # Forward pass for the anchor, positive, and negative pairs
+            anchor_out = model(anchor)
+            positive_out = model(positive)
+            negative_out = model(negative)
+
+            # Calculate contrastive loss between anchor and positive, anchor and negative
+            loss = criterion(anchor_out, positive_out, negative_out)
+
             loss.backward()
             optimizer.step()
 
@@ -107,3 +114,7 @@ if __name__ == "__main__":
     # Save only model weights
 
     torch.save(model.state_dict(), args.save_model_path)
+
+
+if __name__ == "__main__":
+    train()

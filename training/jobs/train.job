@@ -2,7 +2,10 @@
 #set job requirement
 #SBATCH --partition=gpu
 #SBATCH --gpus=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=06:00:00
 #SBATCH --output=train-%A.out
+#SBATCH --error=train-%A.err
 
 module purge
 module load 2022
