@@ -1,0 +1,19 @@
+#!/bin/bash
+#set job requirement
+#SBATCH --partition=gpu
+#SBATCH --gpus=1
+#SBATCH --output=train-%A.out
+
+module purge
+module load 2022
+module load Anaconda3/2022.05
+
+conda env create -f  training/environment.yml
+
+source activate supervised-learning
+
+pip install opencv-python
+pip install torchvision
+
+
+python training/supervised-learning/train.py

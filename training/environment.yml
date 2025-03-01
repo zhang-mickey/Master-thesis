@@ -1,0 +1,21 @@
+name: supervised-learning
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cudatoolkit=11.3
+  - opencv
+  - numpy
+  - matplotlib
+  - pandas
+  - scikit-learn==1.5.1
+  - scipy
+  - albumentations
+  - pip
+  - pip:
+      - numpy==1.26.4
+
