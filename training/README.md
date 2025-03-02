@@ -39,3 +39,7 @@ check job
 ```
 scontrol show job 10257384
 ```
+remove 
+```
+rm -rf Masterthesis
+```

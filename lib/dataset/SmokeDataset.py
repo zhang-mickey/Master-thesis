@@ -40,13 +40,20 @@ class SmokeDataset(Dataset):
                 for poly in ann['segmentation']:
                     poly = np.array(poly).reshape((len(poly) // 2, 2)).astype(np.int32)
                     cv2.fillPoly(mask, [poly], 1)  # Set mask pixels to 1
+
             elif isinstance(ann['segmentation'], dict):  # RLE encoding
                 rle = coco_mask.decode(ann['segmentation'])
+                if rle.shape != mask.shape:
+                    print(rle.shape)
+                    print(mask.shape)
+                    rle = cv2.resize(rle, (mask.shape[1], mask.shape[0]), interpolation=cv2.INTER_NEAREST)
+
                 mask = np.maximum(mask, rle)
 
         # Convert to PIL Image before transformation
-        image = transforms.ToPILImage()(image)
-        mask = transforms.ToPILImage()(mask)
+        # image = transforms.ToPILImage()(image)
+        image = Image.fromarray(image)
+        mask = transforms.ToPILImage()(mask * 255)
 
         # Apply transformations
         if self.transform:

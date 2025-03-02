@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-class Loss(nn.Module):
+#Binary segmentation (1 class + background)
+class BCEWithLogitsLoss(nn.Module):
     def __init__(self):
         super().__init__()
-        self.loss = torch.nn.BCEWithLogitsLoss()  # Define the loss function
+        self.loss = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, outputs, targets):
         return self.loss(outputs, targets)
