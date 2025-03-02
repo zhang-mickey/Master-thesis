@@ -11,12 +11,22 @@ module purge
 module load 2022
 module load Anaconda3/2022.05
 
-conda env create -f  training/environment.yml
 
-source activate supervised-learning
+#conda remove --name supervised-learning --all
+
+conda update -n base -c defaults conda
+
+if [ ! -d "$HOME/.conda/envs/supervised-learning" ]; then
+    conda env create -f training/environment.yml
+fi
+echo "Environment init"
+
+#source activate supervised-learning
+conda activate supervised-learning
 
 pip install opencv-python
 pip install torchvision
 
+echo "Environment activated"
 
 python training/supervised-learning/train.py

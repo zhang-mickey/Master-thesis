@@ -35,8 +35,9 @@ def parse_args():
     return parser.parse_args()
 
 if __name__ == "__main__":
+    print("Starting training...")
     args = parse_args()
-
+    print(torch.cuda.is_available())
     # ---- preprocess ----
     # Get transformations
     image_transform, mask_transform = get_transforms(img_size=512)
@@ -107,3 +108,4 @@ if __name__ == "__main__":
     # Save only model weights
 
     torch.save(model.state_dict(), args.save_model_path)
+    print("Training complete!")
