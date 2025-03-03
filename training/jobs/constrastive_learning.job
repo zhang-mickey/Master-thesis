@@ -1,0 +1,35 @@
+#!/bin/bash
+#set job requirement
+#SBATCH --partition=gpu
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=06:00:00
+#SBATCH --output=train-%A.out
+#SBATCH --error=train-%A.err
+
+module purge
+module load 2022
+module load Anaconda3/2022.05
+
+
+#conda remove --name supervised-learning --all
+
+#conda update -n base -c defaults conda
+
+if [ ! -d "$HOME/.conda/envs/supervised-learning" ]; then
+    conda env create -f training/environment.yml
+fi
+echo "Environment init"
+
+source activate supervised-learning
+
+
+pip install opencv-python
+pip install torchvision
+pip install pycocotools
+
+
+echo "Environment activated"
+
+
+python training/constrastive-learning/train.py

@@ -10,7 +10,6 @@ from torchvision import transforms, models
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
-
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
 
@@ -24,6 +23,7 @@ from lib.utils.transform import *
 from lib.network import *
 from lib.loss.loss import *
 from inference.inference import *
+from lib.utils.metrics import  *
 
 
 def parse_args():
@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--image_folder", type=str, default="smoke-segmentation.v5i.coco-segmentation/test/", help="Path to the image dataset folder")
     parser.add_argument("--save_model_path", type=str, default="model/model_full.pth", help="Path to save the trained model")
     parser.add_argument("--batch_size", type=int, default=8,help="training batch size")
-    parser.add_argument("--num_epochs", type=int, default=20, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=30, help="epoch number")
     parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet50", help="choose backone")
     return parser.parse_args()
 
@@ -79,6 +79,9 @@ if __name__ == "__main__":
     for epoch in range(1,(args.num_epochs+1)):
         model.train()
         running_loss = 0.0
+        train_accuracy = 0.0
+        train_iou = 0.0
+
         for i,(images, masks) in enumerate(train_loader):
             # if i >= max_batches:
             #     break  # Stop after two batches
@@ -95,11 +98,23 @@ if __name__ == "__main__":
 
             running_loss += loss.item()
 
+            # Calculate metrics
+            acc = calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
+            iou = calculate_iou(outputs.squeeze(1), masks.squeeze(1))
+
+            train_accuracy += acc.item()
+            train_iou += iou.item()
+
         avg_train_loss = running_loss / len(train_loader)
+        avg_train_accuracy = train_accuracy / len(train_loader)
+        avg_train_iou = train_iou / len(train_loader)
 
         # Validation Phase
         model.eval()
         val_loss = 0.0
+        val_accuracy = 0.0
+        val_iou = 0.0
+
         with torch.no_grad():
             for images, masks in val_loader:
                 images, masks = images.to(device), masks.to(device)
@@ -107,8 +122,20 @@ if __name__ == "__main__":
                 loss = criterion(outputs.squeeze(1), masks.squeeze(1))
                 val_loss += loss.item()
 
+                # Calculate metrics
+                acc = calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
+                iou = calculate_iou(outputs.squeeze(1), masks.squeeze(1))
+
+                val_accuracy += acc.item()
+                val_iou += iou.item()
+
         avg_val_loss = val_loss / len(val_loader)
-        print(f"Epoch {epoch-1}/{args.num_epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+        avg_val_accuracy = val_accuracy / len(val_loader)
+        avg_val_iou = val_iou / len(val_loader)
+
+        print(
+            f"Epoch {epoch-1}/{args.num_epochs}, Train Loss: {avg_train_loss:.4f}, Train Acc: {avg_train_accuracy:.4f}, Train IoU: {avg_train_iou:.4f}")
+        print(f"Val Loss: {avg_val_loss:.4f}, Val Acc: {avg_val_accuracy:.4f}, Val IoU: {avg_val_iou:.4f}")
 
         # Update learning rate
         scheduler.step()

@@ -8,19 +8,18 @@ import random
 import json
 from torch.utils.data import Dataset
 from PIL import Image
+import warnings
 
 
 class SmokeContrastiveDataset(Dataset):
     def __init__(self, annotations_file, images_folder, transform=None):
-        # Load annotations from the JSON file
         with open(annotations_file, 'r') as f:
             self.data = json.load(f)
 
         self.images_folder = images_folder
         self.transform = transform
-
-        # Create a dictionary mapping image_id to annotations (category_id, etc.)
         self.image_annotations = {image['id']: [] for image in self.data['images']}
+
         for annotation in self.data['annotations']:
             self.image_annotations[annotation['image_id']].append(annotation['category_id'])
 
@@ -58,21 +57,25 @@ class SmokeContrastiveDataset(Dataset):
         # Get a positive sample (same class)
         positive_indices = [id for id in self.image_ids if self.image_labels[id] == anchor_label and id != image_id]
         print("num of positve",len(positive_indices))
-        if len(positive_indices) == 0:
-            print("no positive sample")
-            # If no positive samples exist, handle accordingly
-            # Option 1: Skip the current sample (return None, None, None)
-            return None, None, None, anchor_label
 
-        positive_image_id=random.choice(positive_indices)
+        if len(positive_indices) == 0:
+            warnings.warn(f"No positive sample for image_id {image_id}. Using self-pairing.")
+            positive_image_id = image_id  # Use anchor itself
+        else:
+            positive_image_id = random.choice(positive_indices)
+
 
         positive_image_path = f"{self.images_folder}/{self.data['images'][positive_image_id]['file_name']}"
         positive_image = Image.open(positive_image_path)
 
         # Get a negative sample (different class)
         negative_indices=[id for id in self.image_ids if self.image_labels[id] != anchor_label]
-        print("num of pnegative",len(negative_indices))
-        negative_image_id = random.choice(negative_indices)
+
+        if len(negative_indices) == 0:
+            warnings.warn(f"No negative sample for image_id {image_id}. Using self-pairing.")
+            negative_image_id = image_id  # Use anchor itself
+        else:
+            negative_image_id = random.choice(negative_indices)
 
 
         negative_image_path = f"{self.images_folder}/{self.data['images'][negative_image_id]['file_name']}"
