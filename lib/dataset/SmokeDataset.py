@@ -1,4 +1,3 @@
-
 from pycocotools import mask as coco_mask
 import numpy as np
 import torch
@@ -9,7 +8,7 @@ from PIL import Image
 from torchvision import transforms
 
 class SmokeDataset(Dataset):
-    def __init__(self, json_path, img_dir, transform=None, mask_transform=None):
+    def __init__(self, json_path, img_dir, transform=None, mask_transform=None,image_ids=None):
         # Load COCO annotations
         with open(json_path, 'r') as f:
             self.data = json.load(f)
@@ -17,7 +16,8 @@ class SmokeDataset(Dataset):
         self.img_dir = img_dir
         self.transform = transform
         self.mask_transform = mask_transform
-        self.img_info = {img['id']: img for img in self.data['images']}
+        # self.img_info = {img['id']: img for img in self.data['images']}
+        self.img_info=image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
         self.annotations = self.data['annotations']
 
     def __len__(self):
@@ -25,7 +25,14 @@ class SmokeDataset(Dataset):
 
     def __getitem__(self, idx):
         # Load image
-        img_info = list(self.img_info.values())[idx]
+        if isinstance(self.img_info, list):
+        # If image_ids was provided, we need to get the image info from the data
+            img_id = self.img_info[idx]
+            img_info = next((img for img in self.data['images'] if img['id'] == img_id), None)
+        else:
+            # If self.img_info is a dictionary (the commented out line in __init__)
+            img_info = list(self.img_info.values())[idx]
+
         img_path = f"{self.img_dir}/{img_info['file_name']}"
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -36,6 +43,7 @@ class SmokeDataset(Dataset):
         # Load annotations
         image_annotations = [ann for ann in self.annotations if ann['image_id'] == img_info['id']]
         for ann in image_annotations:
+
             if isinstance(ann['segmentation'], list):
                 for poly in ann['segmentation']:
                     poly = np.array(poly).reshape((len(poly) // 2, 2)).astype(np.int32)
