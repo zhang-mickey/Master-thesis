@@ -144,7 +144,7 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         embedded = x
         x = self.fc(x)
-
+        # Returns both the feature embedding and the classification output
         return embedded, x
 
     def get_parameter_groups(self, print_fn=print):
@@ -173,7 +173,7 @@ class ResNet(nn.Module):
         return groups
 
 
-def resnet18(pretrained=False, stride=None, num_classes=1000, **kwargs):
+def resnet18(pretrained=False, stride=None, num_classes=1, **kwargs):
     if stride is None:
         stride = [1, 2, 2, 1]
     model = ResNet(BasicBlock, [2, 2, 2, 2], stride=stride, **kwargs)
@@ -183,7 +183,7 @@ def resnet18(pretrained=False, stride=None, num_classes=1000, **kwargs):
     return model
 
 
-def resnet34(pretrained=False, stride=None, num_classes=1000, **kwargs):
+def resnet34(pretrained=False, stride=None, num_classes=1, **kwargs):
     if stride is None:
         stride = [1, 2, 2, 1]
     model = ResNet(BasicBlock, [3, 4, 6, 3], stride=stride, **kwargs)
@@ -193,7 +193,7 @@ def resnet34(pretrained=False, stride=None, num_classes=1000, **kwargs):
     return model
 
 
-def resnet50(pretrained=False, stride=None, num_classes=1000, **kwargs):
+def resnet50(pretrained=False, stride=None, num_classes=1, **kwargs):
     if stride is None:
         stride = [1, 2, 2, 1]
     model = ResNet(Bottleneck, [3, 4, 6, 3], stride=stride, **kwargs)
@@ -203,7 +203,7 @@ def resnet50(pretrained=False, stride=None, num_classes=1000, **kwargs):
     return model
 
 
-def resnet101(pretrained=False, stride=None, num_classes=1000, **kwargs):
+def resnet101(pretrained=False, stride=None, num_classes=1, **kwargs):
     if stride is None:
         stride = [1, 2, 2, 1]
     model = ResNet(Bottleneck, [3, 4, 23, 3], stride=stride, **kwargs)
@@ -213,7 +213,7 @@ def resnet101(pretrained=False, stride=None, num_classes=1000, **kwargs):
     return model
 
 
-def resnet152(pretrained=False, stride=None, num_classes=1000, **kwargs):
+def resnet152(pretrained=False, stride=None, num_classes=1, **kwargs):
     if stride is None:
         stride = [1, 2, 2, 1]
     model = ResNet(Bottleneck, [3, 8, 36, 3], stride=stride, **kwargs)

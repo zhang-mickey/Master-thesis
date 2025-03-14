@@ -12,7 +12,7 @@ scp zzhang4@snellius.surf.nl:/home/zzhang4/Masterthesis/model/model_full.pth /Us
 
 Run the Job in a SLURM Cluster
 ```
-sbatch training/jobs/train.job
+sbatch training/jobs/supervised_train.job
 ```
 
 monitor job with:
