@@ -28,8 +28,9 @@ pip install opencv-python
 pip install torchvision
 pip install pycocotools
 pip install ttach
+# pip install pydensecrf
 
 echo "Environment activated"
 
 
-python training/classification.py
+python training/Weakly-supervised/classification.py

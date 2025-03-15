@@ -32,7 +32,7 @@ class DeepLabV3Plus(nn.Module):
         # Decoder module
         self.decoder = DecoderModule(in_channels_high=256, in_channels_low=48, num_classes=num_classes)
 
-    def forward(self, x):
+    def forward(self, x,return_features=False):
         input_size = x.size()[2:]
         
         # Forward pass through backbone layers
@@ -56,8 +56,18 @@ class DeepLabV3Plus(nn.Module):
         # print(f"Processed low-level features shape: {low_level_features.shape}")
         
         # Decode and upsample
-        output = self.decoder(aspp_out, low_level_features)
-        output = F.interpolate(output, size=input_size, mode='bilinear', align_corners=False)
+        decoder_features= self.decoder(aspp_out, low_level_features)
+        output = F.interpolate(decoder_features, size=input_size, mode='bilinear', align_corners=False)
+        
+        if return_features:
+            features = {
+                'low_level': x1,
+                'high_level': x4,
+                'aspp_out': aspp_out,
+                'processed_low_level': low_level_features,
+                'decoder_features': decoder_features
+            }
+            return output, features
         
         return output
 

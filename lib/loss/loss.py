@@ -12,6 +12,8 @@ class BCEWithLogitsLoss(nn.Module):
         return self.loss(outputs, targets)
 
 
+
+
 #one positive one negative per anchor
 class TripletLoss(nn.Module):
     def __init__(self, margin=1.0):
@@ -59,100 +61,52 @@ class NPairsLoss(nn.Module):
 
         return loss.mean()
 
-    class SupConLoss(nn.Module):
-        """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
-        It also supports the unsupervised contrastive loss in SimCLR"""
 
-        def __init__(self, temperature=0.07, contrast_mode='all',
-                     base_temperature=0.07):
-            super(SupConLoss, self).__init__()
-            self.temperature = temperature
-            self.contrast_mode = contrast_mode
-            self.base_temperature = base_temperature
+def pixel_contrastive_loss(features, masks, temperature=0.1):
+    """
+    Compute contrastive loss at the pixel level.
+    Args:
+        features: Feature maps from the model (B, C, H, W)
+        masks: Pseudo-label masks (B, H, W)
+        temperature: Temperature scaling for contrastive loss.
+    """
 
-        def forward(self, features, labels=None, mask=None):
-            """Compute loss for model. If both `labels` and `mask` are None,
-            it degenerates to SimCLR unsupervised loss:
-            https://arxiv.org/pdf/2002.05709.pdf
+    B, C, H, W = features.shape
+    features = F.normalize(features, p=2, dim=1)  # L2 normalize features
 
-            Args:
-                features: hidden vector of shape [bsz, n_views, ...].
-                labels: ground truth of shape [bsz].
-                mask: contrastive mask of shape [bsz, bsz], mask_{i,j}=1 if sample j
-                    has the same class as sample i. Can be asymmetric.
-            Returns:
-                A loss scalar.
-            """
-            device = (torch.device('cuda')
-                      if features.is_cuda
-                      else torch.device('cpu'))
+    loss = 0
+    count = 0
 
-            if len(features.shape) < 3:
-                raise ValueError('`features` needs to be [bsz, n_views, ...],'
-                                 'at least 3 dimensions are required')
-            if len(features.shape) > 3:
-                features = features.view(features.shape[0], features.shape[1], -1)
+    for b in range(B):
+        mask = masks[b]  # (H, W)
+        feature_map = features[b]  # (C, H, W)
+        #If masks were originally 512×512 but feature_map is 128×128, 
+        # every coordinate in masks needs to be downscaled by 128/512 = 0.25 
+        # to fit within feature_map.
+        H_feat, W_feat = feature_map.shape[1:]  # 128, 128
+        H_mask, W_mask = masks.shape[1:]  # Likely much larger, e.g., 512, 512
+        print("Mask shape:", mask.shape)
+        scale_x = W_feat / W_mask
+        scale_y = H_feat / H_mask
 
-            batch_size = features.shape[0]
-            if labels is not None and mask is not None:
-                raise ValueError('Cannot define both `labels` and `mask`')
-            elif labels is None and mask is None:
-                mask = torch.eye(batch_size, dtype=torch.float32).to(device)
-            elif labels is not None:
-                labels = labels.contiguous().view(-1, 1)
-                if labels.shape[0] != batch_size:
-                    raise ValueError('Num of labels does not match num of features')
-                mask = torch.eq(labels, labels.T).float().to(device)
-            else:
-                mask = mask.float().to(device)
+        pos_indices = torch.nonzero(mask == 1, as_tuple=False)  # Foreground pixels
+        neg_indices = torch.nonzero(mask == 0, as_tuple=False)  # Background pixels
+        pos_indices[:, 0] = (pos_indices[:, 0] * scale_y).long()
+        pos_indices[:, 1] = (pos_indices[:, 1] * scale_x).long()
+        neg_indices[:, 0] = (neg_indices[:, 0] * scale_y).long()
+        neg_indices[:, 1] = (neg_indices[:, 1] * scale_x).long()
+        # print("Feature map shape:", feature_map.shape) #[1,128,128]
+        # print("Positive indices:", pos_indices)
+        if len(pos_indices) > 1 and len(neg_indices) > 1:
+            pos_features = feature_map[:, pos_indices[:, 0], pos_indices[:, 1]]  # (C, N_pos)
+            neg_features = feature_map[:, neg_indices[:, 0], neg_indices[:, 1]]  # (C, N_neg)
 
-            contrast_count = features.shape[1]
-            contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
-            if self.contrast_mode == 'one':
-                anchor_feature = features[:, 0]
-                anchor_count = 1
-            elif self.contrast_mode == 'all':
-                anchor_feature = contrast_feature
-                anchor_count = contrast_count
-            else:
-                raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
+            # Compute similarity
+            pos_sim = torch.exp(torch.mm(pos_features.T, pos_features) / temperature)  # (N_pos, N_pos)
+            neg_sim = torch.exp(torch.mm(pos_features.T, neg_features) / temperature)  # (N_pos, N_neg)
 
-            # compute logits
-            anchor_dot_contrast = torch.div(
-                torch.matmul(anchor_feature, contrast_feature.T),
-                self.temperature)
-            # for numerical stability
-            logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-            logits = anchor_dot_contrast - logits_max.detach()
+            pos_loss = -torch.log(pos_sim.diag() / (pos_sim.sum() + neg_sim.sum()))
+            loss += pos_loss.mean()
+            count += 1
 
-            # tile mask
-            mask = mask.repeat(anchor_count, contrast_count)
-            # mask-out self-contrast cases
-            logits_mask = torch.scatter(
-                torch.ones_like(mask),
-                1,
-                torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
-                0
-            )
-            mask = mask * logits_mask
-
-            # compute log_prob
-            exp_logits = torch.exp(logits) * logits_mask
-            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
-
-            # compute mean of log-likelihood over positive
-            # modified to handle edge cases when there is no positive pair
-            # for an anchor point.
-            # Edge case e.g.:-
-            # features of shape: [4,1,...]
-            # labels:            [0,1,1,2]
-            # loss before mean:  [nan, ..., ..., nan]
-            mask_pos_pairs = mask.sum(1)
-            mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, 1, mask_pos_pairs)
-            mean_log_prob_pos = (mask * log_prob).sum(1) / mask_pos_pairs
-
-            # loss
-            loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
-            loss = loss.view(anchor_count, batch_size).mean()
-
-            return loss
+    return loss / count if count > 0 else torch.tensor(0.0, device=features.device)
