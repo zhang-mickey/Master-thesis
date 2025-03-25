@@ -62,7 +62,7 @@ class NPairsLoss(nn.Module):
         return loss.mean()
 
 
-def pixel_contrastive_loss(features, masks, temperature=0.1):
+def pixel_contrastive_loss(features, masks, temperature=0.1,max_samples=256):
     """
     Compute contrastive loss at the pixel level.
     Args:
@@ -79,13 +79,14 @@ def pixel_contrastive_loss(features, masks, temperature=0.1):
 
     for b in range(B):
         mask = masks[b]  # (H, W)
+        H_mask, W_mask = masks.shape[1:]  #512, 512
         feature_map = features[b]  # (C, H, W)
         #If masks were originally 512×512 but feature_map is 128×128, 
         # every coordinate in masks needs to be downscaled by 128/512 = 0.25 
         # to fit within feature_map.
         H_feat, W_feat = feature_map.shape[1:]  # 128, 128
-        H_mask, W_mask = masks.shape[1:]  # Likely much larger, e.g., 512, 512
-        print("Mask shape:", mask.shape)
+
+        # print("Mask shape:", mask.shape)
         scale_x = W_feat / W_mask
         scale_y = H_feat / H_mask
 
@@ -97,11 +98,14 @@ def pixel_contrastive_loss(features, masks, temperature=0.1):
         neg_indices[:, 1] = (neg_indices[:, 1] * scale_x).long()
         # print("Feature map shape:", feature_map.shape) #[1,128,128]
         # print("Positive indices:", pos_indices)
+
+        #sample a subset of positive and negative features 
         if len(pos_indices) > 1 and len(neg_indices) > 1:
             pos_features = feature_map[:, pos_indices[:, 0], pos_indices[:, 1]]  # (C, N_pos)
             neg_features = feature_map[:, neg_indices[:, 0], neg_indices[:, 1]]  # (C, N_neg)
 
             # Compute similarity
+            #  O(N_pos * N_neg) memory usage
             pos_sim = torch.exp(torch.mm(pos_features.T, pos_features) / temperature)  # (N_pos, N_pos)
             neg_sim = torch.exp(torch.mm(pos_features.T, neg_features) / temperature)  # (N_pos, N_neg)
 

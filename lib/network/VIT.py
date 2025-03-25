@@ -34,7 +34,7 @@ from timm.models.helpers import load_pretrained
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from timm.models import resnet26d, resnet50d
 from timm.models.registry import register_model
-
+import os
 
 def _cfg(url='', **kwargs):
     return {
@@ -365,7 +365,8 @@ def vit_base_patch16_224(pretrained=True, num_classes=1,**kwargs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if pretrained:
-        checkpoint_path = "/Users/jowonkim/Documents/GitHub/Masterthesis/model/jx_vit_base_p16_224-80ecf9dd.pth"  # Update this path
+        checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                                      "model", "jx_vit_base_p16_224-80ecf9dd.pth")
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         if "pos_embed" in checkpoint:

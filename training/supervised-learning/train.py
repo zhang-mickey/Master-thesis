@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--image_folder", type=str, default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/test/"), help="Path to the image dataset folder")
     parser.add_argument("--save_model_path", type=str, default=os.path.join(project_root,"model/model_full.pth"), help="Path to save the trained model")
     parser.add_argument("--batch_size", type=int, default=8,help="training batch size")
-    parser.add_argument("--num_epochs", type=int, default=3, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=50, help="epoch number")
     parser.add_argument("--lr", type=float, default=0.01, help="initial learning rate")
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,mode='min',patience=args.lr_patience)
 
     # ---- Training Loop ----
-    max_batches = 1
+    # max_batches = 1
     for epoch in range(1,(args.num_epochs+1)):
         model.train()
         running_loss = 0.0
@@ -101,8 +101,8 @@ if __name__ == "__main__":
         train_iou = 0.0
 
         for i,(images, masks) in enumerate(train_loader):
-            if i >= max_batches:
-                break  # Stop after two batches
+            # if i >= max_batches:
+            #     break  # Stop after two batches
 
             images = images.to(device)
             masks = masks.to(device)

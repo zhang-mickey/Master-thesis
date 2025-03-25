@@ -27,10 +27,9 @@ source activate supervised-learning
 pip install opencv-python
 pip install torchvision
 pip install pycocotools
-pip install timm
-pip install einops
+
 
 echo "Environment activated"
 
 
-python training/supervised-learning/train.py
+python training/Weakly-supervised/train.py
