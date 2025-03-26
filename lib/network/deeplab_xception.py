@@ -337,20 +337,22 @@ class DeepLabv3_plus(nn.Module):
                                        nn.ReLU(),
                                        nn.Conv2d(256, n_classes, kernel_size=1, stride=1))
 
-    def forward(self, input):
+    def forward(self, input,return_features=False):
+        ## Encoder
         x, low_level_features = self.xception_features(input)
+        #ASPP
         x1 = self.aspp1(x)
         x2 = self.aspp2(x)
         x3 = self.aspp3(x)
         x4 = self.aspp4(x)
         x5 = self.global_avg_pool(x)
         x5 = F.upsample(x5, size=x4.size()[2:], mode='bilinear', align_corners=True)
-
+         # ASPP concatenation
         x = torch.cat((x1, x2, x3, x4, x5), dim=1)
-
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+
         x = F.upsample(x, size=(int(math.ceil(input.size()[-2]/4)),
                                 int(math.ceil(input.size()[-1]/4))), mode='bilinear', align_corners=True)
 
@@ -358,11 +360,20 @@ class DeepLabv3_plus(nn.Module):
         low_level_features = self.bn2(low_level_features)
         low_level_features = self.relu(low_level_features)
 
-
+        # Decoder concatenation
         x = torch.cat((x, low_level_features), dim=1)
-        x = self.last_conv(x)
-        x = F.upsample(x, size=input.size()[2:], mode='bilinear', align_corners=True)
+        decoder_features = self.last_conv(x)  # Capture decoder features before final upsampling
+        
+        x = F.upsample(decoder_features, size=input.size()[2:], mode='bilinear', align_corners=True)
 
+        if return_features:
+            features = {
+                'aspp_features': x,  # Features after ASPP processing
+                'processed_low_level': low_level_features,
+                'decoder_features':decoder_features
+            }
+            return x, features
+        
         return x
 
     def freeze_bn(self):
@@ -406,12 +417,12 @@ def get_10x_lr_params(model):
                 yield k
 
 
-if __name__ == "__main__":
-    model = DeepLabv3_plus(nInputChannels=3, n_classes=1, os=16, pretrained=True, _print=True)
-    model.eval()
-    image = torch.randn(1, 3, 512, 512)
-    with torch.no_grad():
-        output = model.forward(image)
-    print(output.size())
+# if __name__ == "__main__":
+#     model = DeepLabv3_plus(nInputChannels=3, n_classes=1, os=16, pretrained=True, _print=True)
+#     model.eval()
+#     image = torch.randn(1, 3, 512, 512)
+#     with torch.no_grad():
+#         output = model.forward(image)
+#     print(output.size())
 
 

@@ -100,14 +100,18 @@ def pixel_contrastive_loss(features, masks, temperature=0.1,max_samples=256):
         # print("Positive indices:", pos_indices)
 
         #sample a subset of positive and negative features 
+        if len(pos_indices) > max_samples:
+            pos_indices = pos_indices[torch.randperm(len(pos_indices))[:max_samples]]
+        if len(neg_indices) > max_samples:
+            neg_indices = neg_indices[torch.randperm(len(neg_indices))[:max_samples]]
+
         if len(pos_indices) > 1 and len(neg_indices) > 1:
             pos_features = feature_map[:, pos_indices[:, 0], pos_indices[:, 1]]  # (C, N_pos)
             neg_features = feature_map[:, neg_indices[:, 0], neg_indices[:, 1]]  # (C, N_neg)
 
-            # Compute similarity
-            #  O(N_pos * N_neg) memory usage
-            pos_sim = torch.exp(torch.mm(pos_features.T, pos_features) / temperature)  # (N_pos, N_pos)
-            neg_sim = torch.exp(torch.mm(pos_features.T, neg_features) / temperature)  # (N_pos, N_neg)
+            # ✅ **Avoid large matrix multiplication by limiting pairs** ✅
+            pos_sim = torch.exp(torch.mm(pos_features.T, pos_features) / temperature)  
+            neg_sim = torch.exp(torch.mm(pos_features.T, neg_features) / temperature)  
 
             pos_loss = -torch.log(pos_sim.diag() / (pos_sim.sum() + neg_sim.sum()))
             loss += pos_loss.mean()

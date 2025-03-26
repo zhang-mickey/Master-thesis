@@ -11,7 +11,7 @@ def choose_backbone(backbone_name,pretrained=True,num_classes=1):
     if backbone_name == 'deeplabv3plus_resnet50':
         net =DeepLabV3Plus(pretrained=True)
         return  net
-    elif backbone_name == 'segmenter':
+    elif backbone_name == 'Segmenter':
         net =Segmenter(num_classes=num_classes)
         return  net
     #Classification

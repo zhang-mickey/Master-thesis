@@ -9,6 +9,7 @@ import os,argparse
 from torchvision import transforms, models
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
+from torch.optim.lr_scheduler import _LRScheduler, StepLR
 
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
@@ -25,27 +26,46 @@ from lib.loss.loss import *
 from inference.inference import *
 from lib.utils.metrics import  *
 
+class PolyLR(_LRScheduler):
+    def __init__(self, optimizer, max_iters, power=0.9, last_epoch=-1, min_lr=1e-6):
+        self.power = power
+        self.max_iters = max_iters  # avoid zero lr
+        self.min_lr = min_lr
+        super(PolyLR, self).__init__(optimizer, last_epoch)
+    
+    def get_lr(self):
+        return [ max( base_lr * ( 1 - self.last_epoch/self.max_iters )**self.power, self.min_lr)
+                for base_lr in self.base_lrs]
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Supervised learning")
+    #Dataset
     parser.add_argument("--json_path", type=str, default=os.path.join(project_root,"smoke-segmentation.v5i.coco-segmentation/test/_annotations.coco.json"),help="Path to COCO annotations JSON file")
     parser.add_argument("--image_folder", type=str, default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/test/"), help="Path to the image dataset folder")
-    parser.add_argument("--save_model_path", type=str, default=os.path.join(project_root,"model/model_full.pth"), help="Path to save the trained model")
+    parser.add_argument("--save_model_path", type=str, default=os.path.join(project_root,"model/model_supervised.pth"), help="Path to save the trained model")
+    #Train 
     parser.add_argument("--batch_size", type=int, default=8,help="training batch size")
+    parser.add_argument("--val_batch_size", type=int, default=4,help="val batch size")
+
     parser.add_argument("--num_epochs", type=int, default=50, help="epoch number")
-    parser.add_argument("--lr", type=float, default=0.01, help="initial learning rate")
+    parser.add_argument("--lr", type=float, default=0.001, help="initial learning rate")
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
-    parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet50", help="choose backone")
+    parser.add_argument("--backbone", type=str, default="Segmenter", help="choose backone")
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
-    parser.add_argument('--weight_decay', '--wd', default=0.0005, type=float,
+    parser.add_argument("--loss_type", type=str, default='cross_entropy',
+                        choices=['cross_entropy', 'focal_loss'], help="loss type (default: False)")
+    parser.add_argument('--weight_decay', '--wd', default=0, type=float,
                         metavar='W', help='weight decay (default: 1e-4)')
-    parser.add_argument('--lr_patience', default=2, type=int,
+    parser.add_argument('--lr_patience', default=5, type=int,
                         help='Patience of LR scheduler. See documentation of ReduceLROnPlateau.')
     parser.add_argument('--iter_size', default=2, type=int, help='when iter_size, opt step forward')
     parser.add_argument('--freeze', default=True, type=bool)
+    parser.add_argument("--lr_scheduler", type=str, default='step', choices=['poly', 'step'],
+                        help="learning rate scheduler policy")
+
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -77,8 +97,8 @@ if __name__ == "__main__":
 
     # Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
 
 
     # ---- Load DeepLabV3+ Model ----
@@ -88,12 +108,28 @@ if __name__ == "__main__":
     model.to(device)
 
     # ---- Define Loss & Optimizer ----
+
     criterion = BCEWithLogitsLoss()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr,momentum=args.momentum, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,mode='min',patience=args.lr_patience)
+
+    optimizer = optim.SGD(
+                # params=[
+                #     {'params': model.backbone.parameters(), 'lr': args.lr / 10},
+                #     {'params': model.classifier.parameters(), 'lr': args.lr}
+                # ],
+                model.parameters(), 
+                lr=args.lr,
+                momentum=args.momentum, 
+                weight_decay=args.weight_decay
+                )
+    if args.lr_scheduler == 'poly':
+        scheduler = PolyLR(optimizer,max_iters=len(train_loader)*args.num_epochs, power=0.9)
+    else:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,mode='max',patience=args.lr_patience)
 
     # ---- Training Loop ----
     # max_batches = 1
+    best_score=0.0
     for epoch in range(1,(args.num_epochs+1)):
         model.train()
         running_loss = 0.0
@@ -115,7 +151,9 @@ if __name__ == "__main__":
             loss.backward()
             #update weights
             optimizer.step()
-
+            if args.lr_scheduler == 'poly':
+                scheduler.step()
+            # Update loss
             running_loss += loss.item()
 
             # Calculate metrics
@@ -163,9 +201,10 @@ if __name__ == "__main__":
         print(
             f"Epoch {epoch-1}/{args.num_epochs}, Train Loss: {avg_train_loss:.4f}, Train Acc: {avg_train_accuracy:.4f}, Train mIoU: {avg_train_iou:.4f}")
         print(f"Val Loss: {avg_val_loss:.4f}, Val Acc: {avg_val_accuracy:.4f}, Val mIoU: {val_miou:.4f}")
-
-        # Update learning rate
-        scheduler.step(val_miou)
+        
+        if args.lr_scheduler == 'step':
+            scheduler.step()
+      
     save_path = os.path.join(
     os.path.dirname(args.save_model_path),
     f"{args.backbone}_{os.path.basename(args.save_model_path)}"
