@@ -3,109 +3,236 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
 from timm.models.layers import trunc_normal_
+from timm.models.layers import DropPath
+from lib.network.blocks import *
 
 # Patch Embedding Layer
 class PatchEmbedding(nn.Module):
     def __init__(self, img_size=512, patch_size=16, in_channels=3, embed_dim=768):
         super().__init__()
+        self.img_size = img_size
         self.patch_size = patch_size
-        self.num_patches = (img_size // patch_size) ** 2
-        self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
-        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, embed_dim))  # Learnable Positional Encoding
+        # self.num_patches = (img_size // patch_size) ** 2
+        self.grid_size = img_size // patch_size, img_size // patch_size
+        self.num_patches = self.grid_size[0] * self.grid_size[1]
+        self.proj = nn.Conv2d(
+            in_channels, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
+        
+        # self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, embed_dim))  # Learnable Positional Encoding
 
     def forward(self, x):
+        B,C,H,W=x.shape
         x = self.proj(x)  # (B, embed_dim, H/patch, W/patch)
         x = x.flatten(2).transpose(1, 2)  # (B, num_patches, embed_dim)
-        x += self.pos_embedding  # Add positional encoding
+        # x += self.pos_embedding  # Add positional encoding
         return x
 
-# ViT Encoder (Removes Classification Head)
 class ViTEncoder(nn.Module):
-    def __init__(self, img_size=512, patch_size=16, model_name='vit_b_16', pretrained=True):
+    """
+        Args:
+            n_heads:Number of attention heads in multi-head self-attention
+        Returns:
+    """
+    def __init__(self, 
+                    img_size=512, 
+                    patch_size=16, 
+                    model_name='vit_b_16', 
+                    dropout=0.1,
+                    n_layers=12,
+                    num_heads=12,
+                    num_classes=1,
+                    mlp_dim=3072,
+                    hidden_dim=768,
+                    dim_model=512,
+                    drop_path_rate=0.0,
+                    pretrained=True,
+                    distilled=False):
         super().__init__()
 
-        self.vit = models.vision_transformer.vit_b_16(pretrained=pretrained)
-        self.vit.heads = nn.Identity()  # Remove classification head
-
+        # self.vit = models.vision_transformer.vit_b_16(pretrained=pretrained)
+        # self.vit.heads = nn.Identity()  # Remove classification head
+        self.patch_size = patch_size
+        self.dropout = nn.Dropout(dropout)
+        self.n_layers=n_layers
+        self.mlp_dim=mlp_dim
+        self.num_heads=num_heads
         self.num_patches = (img_size // patch_size) ** 2  # 1024 patches for 512x512
-        self.hidden_dim = self.vit.hidden_dim  # 768 for ViT-B/16
+        self.hidden_dim = hidden_dim  # 768 for ViT-B/16
+        self.distilled = distilled
 
-        # Get original positional embedding (1, 197, 768)
-        orig_pos_embed = self.vit.encoder.pos_embedding  
-        cls_pos_embed = orig_pos_embed[:, :1, :]  # Keep class token pos embedding
-        patch_pos_embed = orig_pos_embed[:, 1:, :]  # Patch embeddings (196 patches)
+        self.patch_embed=PatchEmbedding(
+            img_size=img_size,
+            patch_size=patch_size,
+            in_channels=3,
+            embed_dim=self.hidden_dim
+        )
+        self.cls_token=nn.Parameter(torch.zeros(1,1,self.hidden_dim))
+        #class and position token
+        if self.distilled:
+            self.dis_token=nn.Parameter(torch.zeros(1,1,self.hidden_dim)) 
+            self.pos_embed=nn.Parameter(
+                torch.randn(1,self.patch_embed.num_patches+2,self.hidden_dim)
+            )
+        else:
+            self.pos_embed=nn.Parameter(
+                torch.randn(1,self.patch_embed.num_patches+1,self.hidden_dim)
+            ) # Remove Distillation Head
 
-        # Reshape & interpolate patches to match the new num_patches (1024)
-        patch_pos_embed = patch_pos_embed.reshape(1, 14, 14, self.hidden_dim).permute(0, 3, 1, 2)  # (1, 768, 14, 14)
-        new_patch_pos_embed = F.interpolate(
-            patch_pos_embed,
-            size=(img_size // patch_size, img_size // patch_size),  # (32, 32) for 512x512
-            mode='bilinear', align_corners=False
-        ).permute(0, 2, 3, 1).reshape(1, self.num_patches, self.hidden_dim)  # (1, 1024, 768)
+        # transformer blocks
+        dpr=[x.item() for x in torch.linspace(0,drop_path_rate,n_layers)]
+        self.blocks = nn.ModuleList([
+            Block(
+                dim=self.hidden_dim,
+                heads=self.num_heads,
+                mlp_dim=mlp_dim,
+                dropout=dropout,
+                drop_path=dpr[i],
+            )
+            for i in range(n_layers)
+        ])
 
-        # Concatenate class token embedding with resized patch embeddings
-        self.vit.encoder.pos_embedding = nn.Parameter(torch.cat([cls_pos_embed, new_patch_pos_embed], dim=1))  # (1, 1025, 768)
+        #output head
+        self.norm=nn.LayerNorm(self.hidden_dim)
+        self.head=nn.Linear(self.hidden_dim,num_classes)
 
-    def forward(self, x):
+        trunc_normal_(self.pos_embed,std=.02)
+        trunc_normal_(self.cls_token,std=.02)
+
+        if self.distilled:
+            trunc_normal_(self.dis_token,std=.02)
+
+        self.pre_logits=nn.Identity()
+        self.apply(init_weights)
+
+    def forward(self, x,return_features=False):
         B, C, H, W = x.shape  # (B, 3, 512, 512)
-        x = self.vit.conv_proj(x)  # (B, dim, grid_h, grid_w)
-        x = x.flatten(2).transpose(1, 2)  # (B, num_patches, dim)
-
+        PS =self.patch_size
+        x = self.patch_embed(x)
         # Add class token
-        cls_token = self.vit.class_token.expand(B, -1, -1)  # (B, 1, dim)
-        x = torch.cat([cls_token, x], dim=1)  # (B, num_patches + 1, dim)
+        cls_token = self.cls_token.expand(B, -1, -1)  # (B, 1, dim)
+        if self.distilled:
+            dis_token = self.dis_token.expand(B, -1, -1)  # (B, 1, dim)
+            x = torch.cat((cls_token, dis_token, x), dim=1)  # (B, num_patches + 2, dim)
+        else:
+            x = torch.cat((cls_token, x), dim=1)  # (B, num_patches + 1, dim)
+        # Add positional embeddings
+        pos_embed = self.pos_embed
+        num_extra_tokens = 1 if not self.distilled else 2
+        if x.shape[1] != pos_embed.shape[1]:
+            pos_embed=resize_pos_embed(
+                pos_embed,
+                self.patch_embed.grid_size,
+                (H//PS, W//PS),
+                num_extra_tokens
+            )
 
-        # Pass through ViT encoder
-        x = self.vit.encoder(x)  # (B, num_patches + 1, dim)
-
-        return x[:, 1:, :]  # Remove class token before returning
+        x=x+pos_embed
+        x=self.dropout(x)
+        for blk in self.blocks:
+            x=blk(x)
+        x=self.norm(x)
+        if return_features:
+            return x
+        
+        if self.distilled:
+            x,x_dist=x[:,0],x[:,1]
+            x=self.head(x)
+        else:
+            x=x[:,0]
+            x=self.head(x)
+        return x
+            
 
 # Linear Decoder
 class LinearDecoder(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, num_classes,patch_size,d_encoder):
         super().__init__()
-        self.head = nn.Linear(in_channels, out_channels)
+        self.input_dim=d_encoder
+        self.output_dim=num_classes
+        self.patch_size=patch_size
+        self.head=nn.Linear(self.input_dim,self.output_dim)
+        self.apply(init_weights)
 
     def forward(self, x, im_size):
         H, W = im_size
+        GS=H//self.patch_size
         x = self.head(x)
+        x=rearrange(x,"b (h w) c -> b c h w",h=GS)
+
         return x
 
-# Mask Transformer Decoder with Cross-Attention
 class MaskTransformerDecoder(nn.Module):
-    def __init__(self, dim=768, num_classes=1, num_layers=3, num_heads=8):
+    def __init__(self, 
+    #hidden size or embedding dimension
+                dim_model=512, 
+                num_classes=1, 
+                num_layers=12, 
+                patch_size=16,
+                num_heads=8,
+                dropout=0.1,
+                drop_path_rate=0.0,
+                d_encoder=768,
+                mlp_dim=3072,
+                ):
         super().__init__()
-        self.class_embeds = nn.Parameter(torch.randn(num_classes, dim))  # Learnable class tokens
-        
-        decoder_layer = nn.TransformerDecoderLayer(d_model=dim, nhead=num_heads, dim_feedforward=2048)
+        self.dim_model=dim_model
+        self.patch_size=patch_size
+       
+        self.num_classes=num_classes
+        self.scale=dim_model**-0.5
 
-        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
+        dpr=[x.item() for x in torch.linspace(0,drop_path_rate,num_layers)]
         
-        # self.segmentation_head = nn.Linear(dim, num_classes)  # Predict segmentation masks
+        self.blocks=nn.ModuleList([
+            Block(
+                dim=dim_model,
+                heads=num_heads,
+                mlp_dim=mlp_dim,
+                dropout=dropout,
+                drop_path=dpr[i],
+            )
+            for i in range(num_layers)
+        ])
+        self.cls_emb=nn.Parameter(torch.randn(1,num_classes,dim_model))
+        self.proj_dec=nn.Linear(d_encoder,dim_model)
 
-    def forward(self, x):
-        """
-        Args:
-            patch_embeds: (B, num_patches, dim)  # e.g., (8, 1024, 768)
-        Returns:
-            masks: (B, num_classes, num_patches)  # e.g., (8, 1, 1024)
-        """
+        self.proj_patch=nn.Parameter(self.scale*torch.randn(dim_model,dim_model))
+        self.proj_classes=nn.Parameter(self.scale*torch.randn(dim_model,dim_model))
+
+        self.decoder_norm=nn.LayerNorm(dim_model)
+        self.mask_norm=nn.LayerNorm(num_classes)
+
+        self.apply(init_weights)
+        trunc_normal_(self.cls_emb,std=.02)
+
+
+    def forward(self, x,im_size):
+        H,W=im_size
+        GS=H//self.patch_size
+        # print(f"x shape before proj_dec: {x.shape}")
+        #([8, 1024, 768])
+        x=self.proj_dec(x)
+
         B, N, D = x.shape  
-        # (Batch, Patches, Embedding Dim)
-        # Class tokens: (num_classes, dim) → (B, num_classes, dim)
-        class_tokens = self.class_embeds.unsqueeze(1).expand(B, -1, -1)
-        
-        # Cross-attention: class tokens (query) → patch_embeds (key/value)
-        # Input shapes for PyTorch Transformer:
-        # - tgt: (sequence_length, B, dim) → (num_classes, B, dim)
-        # - memory: (sequence_length, B, dim) → (1024, B, dim)
-        class_features = self.transformer_decoder(
-            class_tokens.permute(1, 0, 2),  # (num_classes, B, dim)
-            x.permute(1, 0, 2)   # (1024, B, dim)
-        ).permute(1, 0, 2)  # (B, num_classes, dim)
+        cls_emb=self.cls_emb.expand(B,-1,-1)
+        #Before passing into Block, a cls_emb token is added
+        x=torch.cat((x,cls_emb),dim=1)
 
-        
-        masks = torch.einsum('bcd,bpd->bcp', class_features, x)
+        for blk in self.blocks:
+            x=blk(x)
+
+        x=self.decoder_norm(x)
+        patches,cls_seg_feat=x[:,:-self.num_classes],x[:,-self.num_classes:]
+        patches=patches @ self.proj_patch
+        cls_seg_feat=cls_seg_feat @ self.proj_classes
+
+        patches=patches/patches.norm(dim=-1,keepdim=True)
+        cls_seg_feat=cls_seg_feat/cls_seg_feat.norm(dim=-1,keepdim=True)
+
+        masks=patches @ cls_seg_feat.transpose(1,2)
+        masks=self.mask_norm(masks)
+        masks=rearrange(masks,"b (h w) n -> b n h w",h=int(GS))
         return masks
 
 # Segmenter Model
@@ -113,22 +240,29 @@ class Segmenter(nn.Module):
     def __init__(self, num_classes, image_size=512, patch_size=16):
         super().__init__()
         self.encoder = ViTEncoder()
-        self.decoder = MaskTransformerDecoder(dim=768, num_classes=num_classes)
+        self.decoder = MaskTransformerDecoder()
         self.patch_size = patch_size
+        self.num_classes = num_classes
         self.image_size = image_size
 
     def forward(self, x):
-        B, C, H, W = x.shape
-        enc_out = self.encoder(x)  # (B, num_patches, 768)
-        dec_out = self.decoder(enc_out)  # (B, num_classes, num_patches)
-        print(f"Decoder output shape: {dec_out.shape}")
+        B, C, H_original, W_original = x.shape
+        x=padding(x,self.patch_size)
+        H,W=x.shape[2:]
 
-        grid_size = H // self.patch_size
-        print(f"Computed grid_size: {grid_size}")
-        dec_out = dec_out.view(B, -1, grid_size, grid_size)  # Reshape to spatial
-        dec_out = F.interpolate(dec_out, size=(H, W), mode='bilinear', align_corners=False)  # Upsample
+        enc_out = self.encoder(x,return_features=True)
+        num_extra_tokens=1
+        #remove CLS foe decoding
+        x=enc_out[:,num_extra_tokens:]  
+        # (B, num_patches, 768)
+        masks = self.decoder(x,(H,W))
 
-        return dec_out
+        # print("Decoder Output Shape:", masks.shape)
+        masks=F.interpolate(masks,size=(H,W),mode="bilinear")
+        masks=unpadding(masks,(H_original,W_original))
+        # print("Unpadded Masks Shape:", masks.shape)
+
+        return masks
         
 # #       Segmenter model
 # #	•	Uses ViT as feature extractor, removing the classification head.
