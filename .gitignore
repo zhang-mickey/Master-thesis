@@ -1,2 +1,10 @@
 .DS_Store
 training/.DS_Store
+lib/dataset/videos/
+lib/dataset/frames/
+*.pyc
+*.pth
+*.json
+*.xml
+*.iml
+smoke-segmentation.v5i.coco-segmentation/
