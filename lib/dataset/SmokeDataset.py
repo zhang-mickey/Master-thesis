@@ -6,82 +6,155 @@ import json
 import cv2
 from PIL import Image
 from torchvision import transforms
-import random
+import os
+from albumentations import Compose
+from albumentations.augmentations.dropout.coarse_dropout import CoarseDropout
 from lib.utils.augmentation import RandomCrop_For_Segmentation, CenterCrop_For_Segmentation, ColorJitterTransform
+from lib.utils.augmentation import *
 
 
-class SmokeDataset(Dataset):
-    def __init__(self, json_path, img_dir, transform=None, mask_transform=None, image_ids=None, flag=1):
-        # Load COCO annotations
-        with open(json_path, 'r') as f:
-            self.data = json.load(f)
+def split_non_smoke_dataset(non_smoke_folder, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
+    """
+    Split non-smoke images into train, validation, and test sets.
 
-        self.img_dir = img_dir
+    Args:
+        non_smoke_folder: Path to the folder containing non-smoke images
+        train_ratio: Ratio of images for training
+        val_ratio: Ratio of images for validation
+        test_ratio: Ratio of images for testing
+
+    Returns:
+        train_files, val_files, test_files: Lists of image filenames for each set
+    """
+    if not os.path.exists(non_smoke_folder):
+        print(f"Warning: Non-smoke folder {non_smoke_folder} does not exist")
+        return [], [], []
+
+    # Get all image files
+    image_files = [f for f in os.listdir(non_smoke_folder)
+                   if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+    if not image_files:
+        print(f"Warning: No image files found in {non_smoke_folder}")
+        return [], [], []
+
+    # Shuffle the files
+    np.random.shuffle(image_files)
+
+    # Calculate split indices
+    n_total = len(image_files)
+    n_train = int(train_ratio * n_total)
+    n_val = int(val_ratio * n_total)
+
+    # Split the dataset
+    train_files = image_files[:n_train]
+    val_files = image_files[n_train:n_train + n_val]
+    test_files = image_files[n_train + n_val:]
+
+    print(f"Non-smoke images split: Train={len(train_files)}, Val={len(val_files)}, Test={len(test_files)}")
+
+    return train_files, val_files, test_files
+
+
+class SmokeWeaklyDataset(Dataset):
+    def __init__(self,
+                 annotations_file, images_folder,
+                 transform=None, image_ids=None, non_smoke_image_folder=None,
+                 non_smoke_files=None,
+                 smoke_aug=None, smoke_dataset=None):
+        self.annotations_file = annotations_file
+        self.images_folder = images_folder
         self.transform = transform
-        self.mask_transform = mask_transform
-        # self.img_info = {img['id']: img for img in self.data['images']}
-        self.img_info = image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
+        self.frames_dir = non_smoke_image_folder
+
+        self.smoke_dataset = smoke_dataset
+
+        # Load COCO annotation file
+        with open(annotations_file, 'r') as f:
+            self.data = json.load(f)
         self.annotations = self.data['annotations']
-        self.flag = flag
+        if self.smoke_dataset is not None:
+            self.smoke_aug = SmokeCopyPaste(self.smoke_dataset, p=0.7)
+        else:
+            self.smoke_aug = smoke_aug
+
+        self.image_ids = image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
+        # self.image_annotations = {image['id']: [] for image in self.data['images']}
+        # self.image_annotations = {image['id']: [] for image in self.data['images'] if image['id'] in self.image_ids}
+
+        self.image_annotations = {image_id: [] for image_id in self.image_ids}
+        for annotation in self.data['annotations']:
+            if annotation['image_id'] in self.image_annotations:
+                self.image_annotations[annotation['image_id']].append(annotation['category_id'])
+
+        # Map category_id to supercategory
+        self.category_to_supercategory = {category['id']: category['supercategory'] for category in
+                                          self.data['categories']}
+        # Convert to binary labels (smoke vs non-smoke)
+        self.image_labels = {}
+
+        for image_id, annotations in self.image_annotations.items():
+            # For each image, determine if it belongs to "smoke" or "non-smoke"
+            label = 0  # default is non-smoke
+            for category_id in annotations:
+                supercategory = self.category_to_supercategory[category_id]
+                if supercategory == "smoke":
+                    label = 1  # If any category is of "smoke", label as smoke
+                    break
+            self.image_labels[image_id] = label
+
+        # self.image_ids = list(self.image_annotations.keys())
+
+        # Load image paths and labels
+        self.image_data = []
+        self.image_ids_mapping = {}  # Store {index: image_id}
+
+        for image in self.data['images']:
+            if image['id'] in self.image_ids:
+                image_path = os.path.join(images_folder, image['file_name'])
+                self.image_data.append((image_path, self.image_labels[image['id']]))
+
+                # Ensure data is added before accessing the last index
+                self.image_ids_mapping[len(self.image_data) - 1] = str(image['id'])  # Use COCO image ID
+
+        if non_smoke_image_folder is not None and non_smoke_files is not None:
+            for filename in non_smoke_files:
+                if filename.lower().endswith(('jpg', 'jpeg', 'png')):  # Ensure it's an image file
+                    image_path = os.path.join(non_smoke_image_folder, filename)
+                    self.image_data.append((image_path, 0))  # Assign label 0 (non-smoke)
+
+                    if len(self.image_data) > 0:  # Ensure non-empty list before assignment
+                        image_id = os.path.splitext(filename)[0]
+                        self.image_ids_mapping[len(self.image_data) - 1] = image_id
+
+        print(f"Total images loaded: {len(self.image_data)}")
 
     def __len__(self):
-        return len(self.img_info)
+        return len(self.image_data)
 
-    def __getitem__(self, idx):
-        # Load image
-        if isinstance(self.img_info, list):
-            # If image_ids was provided, we need to get the image info from the data
-            img_id = self.img_info[idx]
-            img_info = next((img for img in self.data['images'] if img['id'] == img_id), None)
-        else:
-            # If self.img_info is a dictionary (the commented out line in __init__)
-            img_info = list(self.img_info.values())[idx]
+    def __getitem__(self, index):
+        # Load image and label
+        image_path, label = self.image_data[index]
+        image = Image.open(image_path).convert("RGB")
 
-        img_path = f"{self.img_dir}/{img_info['file_name']}"
-        image = cv2.imread(img_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image_ids = self.image_ids_mapping[index]
+        # Convert to NumPy array for processing
+        image_np = np.array(image)
 
-        # Create an empty mask
-        mask = np.zeros((img_info['height'], img_info['width']), dtype=np.uint8)
+        # Define the crop height (e.g., remove the top 20% of the image)
+        crop_height = int(image_np.shape[0] * 0.15)  # Adjust the percentage as needed
+        image_cropped = image_np[crop_height:, :, :]  # Remove top 'crop_height' pixels
 
-        # Load annotations
-        image_annotations = [ann for ann in self.annotations if ann['image_id'] == img_info['id']]
-        for ann in image_annotations:
+        # Convert back to PIL Image
+        image = Image.fromarray(image_cropped)
 
-            if isinstance(ann['segmentation'], list):
-                for poly in ann['segmentation']:
-                    poly = np.array(poly).reshape((len(poly) // 2, 2)).astype(np.int32)
-                    cv2.fillPoly(mask, [poly], 1)  # Set mask pixels to 1
+        if label == 0 and self.smoke_dataset is not None:
+            image, label = self.smoke_aug(image, label)
 
-            elif isinstance(ann['segmentation'], dict):  # RLE encoding
-                rle = coco_mask.decode(ann['segmentation'])
-                if rle.shape != mask.shape:
-                    print(rle.shape)
-                    print(mask.shape)
-                    rle = cv2.resize(rle, (mask.shape[1], mask.shape[0]), interpolation=cv2.INTER_NEAREST)
-
-                mask = np.maximum(mask, rle)
-
-        # Convert to PIL Image before transformation
-        # image = transforms.ToPILImage()(image)
-        image = Image.fromarray(image)
-        mask = transforms.ToPILImage()(mask * 255)
-
-        if self.flag == 1:
-
-            probability = random.random()
-
-            if probability < 0.2:
-                randomcrop = RandomCrop_For_Segmentation(368)
-                image, mask = randomcrop(image, mask)
-            else:
-                crop_transform = CenterCrop_For_Segmentation(368)
-                image, mask = crop_transform(image, mask)
-        image = ColorJitterTransform(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5)(image)
-        # Apply transformations
         if self.transform:
             image = self.transform(image)
-        if self.mask_transform:
-            mask = self.mask_transform(mask)
 
-        return image, mask
+        return image, torch.tensor(label, dtype=torch.float), image_ids
+
+
+

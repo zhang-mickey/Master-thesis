@@ -1,4 +1,3 @@
-
 from pycocotools import mask as coco_mask
 import numpy as np
 import torch
@@ -7,60 +6,77 @@ import json
 import cv2
 from PIL import Image
 from torchvision import transforms
-import os 
+import os
+from albumentations import Compose
+from albumentations.augmentations.dropout.coarse_dropout import CoarseDropout
+from lib.utils.augmentation import RandomCrop_For_Segmentation, CenterCrop_For_Segmentation, ColorJitterTransform
+from lib.utils.augmentation import *
+
 
 def split_non_smoke_dataset(non_smoke_folder, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
     """
     Split non-smoke images into train, validation, and test sets.
-    
+
     Args:
         non_smoke_folder: Path to the folder containing non-smoke images
         train_ratio: Ratio of images for training
         val_ratio: Ratio of images for validation
         test_ratio: Ratio of images for testing
-        
+
     Returns:
         train_files, val_files, test_files: Lists of image filenames for each set
     """
     if not os.path.exists(non_smoke_folder):
         print(f"Warning: Non-smoke folder {non_smoke_folder} does not exist")
         return [], [], []
-        
+
     # Get all image files
-    image_files = [f for f in os.listdir(non_smoke_folder) 
-                  if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    
+    image_files = [f for f in os.listdir(non_smoke_folder)
+                   if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
     if not image_files:
         print(f"Warning: No image files found in {non_smoke_folder}")
         return [], [], []
-    
+
     # Shuffle the files
     np.random.shuffle(image_files)
-    
+
     # Calculate split indices
     n_total = len(image_files)
     n_train = int(train_ratio * n_total)
     n_val = int(val_ratio * n_total)
-    
+
     # Split the dataset
     train_files = image_files[:n_train]
-    val_files = image_files[n_train:n_train+n_val]
-    test_files = image_files[n_train+n_val:]
-    
+    val_files = image_files[n_train:n_train + n_val]
+    test_files = image_files[n_train + n_val:]
+
     print(f"Non-smoke images split: Train={len(train_files)}, Val={len(val_files)}, Test={len(test_files)}")
-    
+
     return train_files, val_files, test_files
 
+
 class SmokeWeaklyDataset(Dataset):
-    def __init__(self, annotations_file, images_folder, transform=None,image_ids=None,non_smoke_image_folder=None,non_smoke_files=None):
+    def __init__(self,
+                 annotations_file, images_folder,
+                 transform=None, image_ids=None, non_smoke_image_folder=None,
+                 non_smoke_files=None,
+                 smoke_aug=None, smoke_dataset=None):
         self.annotations_file = annotations_file
         self.images_folder = images_folder
         self.transform = transform
         self.frames_dir = non_smoke_image_folder
 
+        self.smoke_dataset = smoke_dataset
+
         # Load COCO annotation file
         with open(annotations_file, 'r') as f:
             self.data = json.load(f)
+        self.annotations = self.data['annotations']
+        if self.smoke_dataset is not None:
+            self.smoke_aug = SmokeCopyPaste(self.smoke_dataset, p=0.7)
+        else:
+            self.smoke_aug = smoke_aug
 
         self.image_ids = image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
         # self.image_annotations = {image['id']: [] for image in self.data['images']}
@@ -90,14 +106,14 @@ class SmokeWeaklyDataset(Dataset):
         # self.image_ids = list(self.image_annotations.keys())
 
         # Load image paths and labels
-        self.image_data=[]
+        self.image_data = []
         self.image_ids_mapping = {}  # Store {index: image_id}
 
         for image in self.data['images']:
             if image['id'] in self.image_ids:
                 image_path = os.path.join(images_folder, image['file_name'])
                 self.image_data.append((image_path, self.image_labels[image['id']]))
-               
+
                 # Ensure data is added before accessing the last index
                 self.image_ids_mapping[len(self.image_data) - 1] = str(image['id'])  # Use COCO image ID
 
@@ -108,10 +124,11 @@ class SmokeWeaklyDataset(Dataset):
                     self.image_data.append((image_path, 0))  # Assign label 0 (non-smoke)
 
                     if len(self.image_data) > 0:  # Ensure non-empty list before assignment
-                        image_id = os.path.splitext(filename)[0]  
+                        image_id = os.path.splitext(filename)[0]
                         self.image_ids_mapping[len(self.image_data) - 1] = image_id
-    
+
         print(f"Total images loaded: {len(self.image_data)}")
+
     def __len__(self):
         return len(self.image_data)
 
@@ -120,13 +137,24 @@ class SmokeWeaklyDataset(Dataset):
         image_path, label = self.image_data[index]
         image = Image.open(image_path).convert("RGB")
 
-        image_ids=self.image_ids_mapping[index]
+        image_ids = self.image_ids_mapping[index]
+        # Convert to NumPy array for processing
+        image_np = np.array(image)
+
+        # Define the crop height (e.g., remove the top 20% of the image)
+        crop_height = int(image_np.shape[0] * 0.15)  # Adjust the percentage as needed
+        image_cropped = image_np[crop_height:, :, :]  # Remove top 'crop_height' pixels
+
+        # Convert back to PIL Image
+        image = Image.fromarray(image_cropped)
+
+        if label == 0 and self.smoke_dataset is not None:
+            image, label = self.smoke_aug(image, label)
 
         if self.transform:
             image = self.transform(image)
 
-        return image, torch.tensor(label, dtype=torch.float),image_ids
+        return image, torch.tensor(label, dtype=torch.float), image_ids
 
 
 
-        
