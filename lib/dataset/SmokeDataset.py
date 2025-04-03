@@ -6,9 +6,12 @@ import json
 import cv2
 from PIL import Image
 from torchvision import transforms
+import random
+from lib.utils.augmentation import RandomCrop_For_Segmentation, CenterCrop_For_Segmentation, ColorJitterTransform
+
 
 class SmokeDataset(Dataset):
-    def __init__(self, json_path, img_dir, transform=None, mask_transform=None,image_ids=None):
+    def __init__(self, json_path, img_dir, transform=None, mask_transform=None, image_ids=None, flag=1):
         # Load COCO annotations
         with open(json_path, 'r') as f:
             self.data = json.load(f)
@@ -17,8 +20,9 @@ class SmokeDataset(Dataset):
         self.transform = transform
         self.mask_transform = mask_transform
         # self.img_info = {img['id']: img for img in self.data['images']}
-        self.img_info=image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
+        self.img_info = image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
         self.annotations = self.data['annotations']
+        self.flag = flag
 
     def __len__(self):
         return len(self.img_info)
@@ -26,7 +30,7 @@ class SmokeDataset(Dataset):
     def __getitem__(self, idx):
         # Load image
         if isinstance(self.img_info, list):
-        # If image_ids was provided, we need to get the image info from the data
+            # If image_ids was provided, we need to get the image info from the data
             img_id = self.img_info[idx]
             img_info = next((img for img in self.data['images'] if img['id'] == img_id), None)
         else:
@@ -63,6 +67,17 @@ class SmokeDataset(Dataset):
         image = Image.fromarray(image)
         mask = transforms.ToPILImage()(mask * 255)
 
+        if self.flag == 1:
+
+            probability = random.random()
+
+            if probability < 0.2:
+                randomcrop = RandomCrop_For_Segmentation(368)
+                image, mask = randomcrop(image, mask)
+            else:
+                crop_transform = CenterCrop_For_Segmentation(368)
+                image, mask = crop_transform(image, mask)
+        image = ColorJitterTransform(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5)(image)
         # Apply transformations
         if self.transform:
             image = self.transform(image)
