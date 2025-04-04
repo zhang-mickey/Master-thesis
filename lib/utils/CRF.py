@@ -1,7 +1,6 @@
 import numpy as np
 from skimage.segmentation import slic, mark_boundaries
 
-# Fix the import error - graph is now in the main skimage package
 try:
     # Try the new location first
     from skimage import graph
@@ -19,8 +18,9 @@ def apply_crf(image, prob_map, n_segments=100, compactness=10):
     Args:
         image: Original image (numpy array) with shape (H, W, 3)
         prob_map: Probability map from model output with shape (H, W)
-        n_segments: Number of segments for SLIC
-        compactness: Compactness parameter for SLIC
+
+        n_segments: Number of segments for SLIC(higher = more, smaller superpixels)
+        compactness: Compactness parameter for SLIC Higher = more square/regular shaped superpixels
 
     Returns:
         Refined binary segmentation mask
