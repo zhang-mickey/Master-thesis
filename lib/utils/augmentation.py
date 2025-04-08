@@ -11,98 +11,76 @@ from albumentations.augmentations.dropout.coarse_dropout import CoarseDropout
 
 
 class SmokeCopyPaste:
-    def __init__(self, smoke_dataset, p=0.7, max_objects=1):
-        """
-        Args:
-            smoke_dataset: Dataset containing real smoke images/masks
-            p: Probability of applying this augmentation
-            max_objects: Max smoke objects to paste per image
-        """
-        self.smoke_data = [(img, mask) for img, mask in smoke_dataset]
+    def __init__(self, smoke_dataset, p=0.5, max_objects=1):
+        self.smoke_data = [(img, mask) for img, mask, _ in smoke_dataset]
         self.p = p
         self.max_objects = max_objects
-        self.aug = Compose([
-            CoarseDropout(max_holes=5, max_height=64, max_width=64, fill_value=0, p=0.3)
-        ])
 
-    def __call__(self, non_smoke_image, label):
+    def __call__(self, non_smoke_image, label, return_mask=False):
         if label == 1 or random.random() > self.p:
-            return non_smoke_image, torch.tensor(0.0)  # No augmentation, return as non-smoke
+            if return_mask:
+                h, w = non_smoke_image.size[1], non_smoke_image.size[0]
+                return non_smoke_image, torch.tensor(0.0), torch.zeros((h, w), dtype=torch.uint8)
+            return non_smoke_image, torch.tensor(0.0)
 
-        # Convert to OpenCV format
-        non_smoke_image = np.array(non_smoke_image)
+        # Convert PIL Image to numpy array (HWC format)
+        non_smoke_np = np.array(non_smoke_image)
+        if non_smoke_np.ndim == 2:  # Grayscale to RGB
+            non_smoke_np = np.stack([non_smoke_np] * 3, axis=-1)
+        h, w = non_smoke_np.shape[:2]
 
-        num_objects = random.randint(1, self.max_objects)
-        for _ in range(num_objects):
+        mask_total = np.zeros((h, w), dtype=np.uint8)
+
+        for _ in range(random.randint(1, self.max_objects)):
             smoke_img, smoke_mask = random.choice(self.smoke_data)
 
-            # Convert smoke image to numpy array if it's not already
-            if isinstance(smoke_img, Image.Image):
-                smoke_img = np.array(smoke_img)
-            elif isinstance(smoke_img, torch.Tensor):
-                smoke_img = smoke_img.cpu().numpy()
+            # Convert to numpy arrays
+            smoke_img = np.array(smoke_img.convert('RGB')) if isinstance(smoke_img, Image.Image) \
+                else smoke_img.cpu().numpy().transpose(1, 2, 0)
+            smoke_mask = np.array(smoke_mask) if isinstance(smoke_mask, Image.Image) \
+                else smoke_mask.cpu().numpy().squeeze()
 
-            # Convert smoke mask to binary
-            if isinstance(smoke_mask, Image.Image):
-                smoke_mask = np.array(smoke_mask)
-            elif isinstance(smoke_mask, torch.Tensor):
-                smoke_mask = smoke_mask.cpu().numpy()
+            # Resize with aspect ratio preservation
+            smoke_h, smoke_w = smoke_mask.shape
+            scale = min(h / smoke_h, w / smoke_w)
+            new_h, new_w = int(smoke_h * scale), int(smoke_w * scale)
 
-            smoke_mask = (smoke_mask > 0).astype(np.uint8)
-            h, w = smoke_mask.shape
+            smoke_img = cv2.resize(smoke_img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            smoke_mask = cv2.resize(smoke_mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+            smoke_mask = (smoke_mask > 127).astype(np.uint8)
 
-            # Check if smoke mask is larger than the non-smoke image and resize if needed
-            if h >= non_smoke_image.shape[0] or w >= non_smoke_image.shape[1]:
-                # Resize smoke mask and image to fit within the non-smoke image
-                scale = min(non_smoke_image.shape[0] / (h + 1), non_smoke_image.shape[1] / (w + 1))
-                new_h, new_w = int(h * scale), int(w * scale)
-
-                if new_h <= 0 or new_w <= 0:
-                    # Skip this smoke object if it can't be resized properly
-                    continue
-
-                smoke_mask = cv2.resize(smoke_mask, (new_w, new_h))
-                smoke_img = cv2.resize(smoke_img, (new_w, new_h))
-                h, w = new_h, new_w
-
-            # Random position for pasting (now safe because h < image height)
-            y_offset = random.randint(0, max(0, non_smoke_image.shape[0] - h))
-            x_offset = random.randint(0, max(0, non_smoke_image.shape[1] - w))
-
-            # Extract ROI from non-smoke image
-            roi = non_smoke_image[y_offset:y_offset + h, x_offset:x_offset + w].copy()
-
-            # Ensure ROI and smoke image have compatible shapes
-            if roi.shape[:2] != smoke_img.shape[:2]:
-                # Adjust smoke_img to match ROI shape
-                smoke_img = cv2.resize(smoke_img, (roi.shape[1], roi.shape[0]))
-                smoke_mask = cv2.resize(smoke_mask, (roi.shape[1], roi.shape[0]))
-                h, w = roi.shape[:2]
-
-            # Ensure both images have the same number of channels
-            if len(smoke_img.shape) == 2:  # Grayscale
-                smoke_img = cv2.cvtColor(smoke_img, cv2.COLOR_GRAY2BGR)
-            if len(roi.shape) == 2:  # Grayscale
-                roi = cv2.cvtColor(roi, cv2.COLOR_GRAY2BGR)
+            # Random position with boundary checks
+            y1 = random.randint(0, h - new_h)
+            x1 = random.randint(0, w - new_w)
+            y2 = y1 + new_h
+            x2 = x1 + new_w
 
             try:
-                # Blend the smoke mask onto non-smoke background
                 blended = cv2.seamlessClone(
-                    smoke_img, roi, (smoke_mask * 255).astype(np.uint8),
-                    (w // 2, h // 2), cv2.NORMAL_CLONE
+                    # the source image
+                    smoke_img,
+                    # destination region where the smoke will be placed.
+                    non_smoke_np[y1:y2, x1:x2],
+
+                    (smoke_mask * 255).astype(np.uint8),
+
+                    (new_w // 2, new_h // 2),
+                    cv2.NORMAL_CLONE
                 )
+            except:
+                mask = smoke_mask[..., np.newaxis].astype(np.float32)
+                non_smoke_roi = non_smoke_np[y1:y2, x1:x2].astype(np.float32)
+                blended = non_smoke_roi * (1 - mask) + smoke_img.astype(np.float32) * mask
+                blended = np.clip(blended, 0, 255).astype(np.uint8)
 
-                # Place blended result back
-                non_smoke_image[y_offset:y_offset + h, x_offset:x_offset + w] = blended
-            except Exception as e:
-                print(f"Seamless cloning failed: {e}")
-                # Fallback to simple alpha blending
-                alpha = 0.7
-                mask_3ch = np.stack([smoke_mask] * 3, axis=2) * alpha
-                blended = roi * (1 - mask_3ch) + smoke_img * mask_3ch
-                non_smoke_image[y_offset:y_offset + h, x_offset:x_offset + w] = blended
+            non_smoke_np[y1:y2, x1:x2] = blended
+            mask_total[y1:y2, x1:x2] = np.maximum(mask_total[y1:y2, x1:x2], smoke_mask)
 
-        return Image.fromarray(non_smoke_image), torch.tensor(1.0)  # Now labeled as smoke
+        # Convert back to PIL Image
+        result_image = Image.fromarray(non_smoke_np)
+        if return_mask:
+            return result_image, torch.tensor(1.0), mask_total
+        return result_image, torch.tensor(1.0)
 
 
 class ColorJitterTransform:
@@ -125,16 +103,14 @@ class ColorJitterTransform:
 
 
 class CenterCrop_For_Segmentation:
-    def __init__(self, crop_size, p=0.5):
+    def __init__(self, crop_size, p=0.2):
         self.crop_size = crop_size  # Can be int (square) or tuple (h, w)
         self.p = p
 
     def __call__(self, image, mask):
-        """Crop center from image-mask pair"""
         if random.random() < self.p:
             img_width, img_height = image.size
 
-            # Handle different crop size formats
             if isinstance(self.crop_size, int):
                 crop_h = crop_w = self.crop_size
             else:
@@ -148,7 +124,6 @@ class CenterCrop_For_Segmentation:
             x_center = (img_width - crop_w) // 2
             y_center = (img_height - crop_h) // 2
 
-            # Apply identical crop to both image and mask
             image = image.crop((
                 x_center,
                 y_center,
@@ -169,17 +144,17 @@ class CenterCrop_For_Segmentation:
 
 
 class RandomCrop_For_Segmentation:
-    def __init__(self, crop_size, p=0.5):
+    def __init__(self, crop_size, p=0.2):
         self.p = p
         self.crop_size = crop_size
 
     def __call__(self, image, mask):
-        if random.random() < self.p:
+        if random.random() > self.p:
             return image, mask
         else:
 
             w, h = image.size
-            crop_h, crop_w = self.crop_size, self.crop_size
+            crop_h, crop_w = self.crop_size
 
             crop_h = min(h, crop_h)
             crop_w = min(w, crop_w)

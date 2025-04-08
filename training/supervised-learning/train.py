@@ -1,3 +1,4 @@
+from this import d
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -10,6 +11,7 @@ from torchvision import transforms, models
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from torch.optim.lr_scheduler import _LRScheduler, StepLR
+from torch.utils.data import WeightedRandomSampler
 
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
@@ -18,6 +20,7 @@ project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
 sys.path.append(project_root)
 
 from lib.dataset.SmokeDataset import *
+from lib.dataset.augDataset import *
 from lib.network.backbone import choose_backbone
 from lib.utils.splitdataset import *
 from lib.utils.transform import *
@@ -26,6 +29,7 @@ from lib.loss.loss import *
 from inference.inference import *
 from lib.utils.metrics import *
 from lib.utils.CRF import apply_crf
+from lib.utils.image_mask_visualize import *
 
 
 class PolyLR(_LRScheduler):
@@ -52,11 +56,25 @@ def parse_args():
                         help="Path to the image dataset folder")
     parser.add_argument("--save_model_path", type=str, default=os.path.join(project_root, "model/model_supervised.pth"),
                         help="Path to save the trained model")
+
+    parser.add_argument("--smoke5k", type=bool, default=False, help="use smoke5k or not")
+    parser.add_argument("--smoke5k_path", type=str, default=os.path.join(project_root, "SMOKE5K/train/"),
+                        help="path to smoke5k")
+
+    parser.add_argument("--Rise", type=bool, default=False, help="use Rise non-smoke or not")
+    parser.add_argument("--Rise_path", type=str, default=os.path.join(project_root, "Rise/Strong_negative_frames/"),
+                        help="path to Rise")
+
+    parser.add_argument("--Dutch", type=bool, default=True, help="use Dutch non-smoke or not")
+    parser.add_argument("--Dutch_path", type=str, default=os.path.join(project_root, "lib/dataset/frames/"),
+                        help="path to Dutch")
+
     # Train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
     parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
+    parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
-    parser.add_argument("--num_epochs", type=int, default=60, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=20, help="epoch number")
     parser.add_argument("--lr", type=float, default=0.05, help="initial learning rate")
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -64,11 +82,13 @@ def parse_args():
     # parser.add_argument("--backbone", type=str, default="Seg", help="choose backone")
     # parser.add_argument("--backbone", type=str, default="deeplabv3plus_Xception", help="choose backone")
     parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet101", help="choose backone")
+
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
     parser.add_argument("--loss_type", type=str, default='BCE',
                         choices=['dice', 'BCE', 'focal_loss'], help="loss type (default: False)")
+
     parser.add_argument('--weight_decay', '--wd', default=0, type=float,
                         metavar='W', help='weight decay (default: 1e-4)')
     parser.add_argument('--lr_patience', default=5, type=int,
@@ -104,17 +124,71 @@ if __name__ == "__main__":
     # dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
     # Load dataset
-    train_dataset = SmokeDataset(args.json_path, args.image_folder, transform=image_transform,
-                                 mask_transform=mask_transform, image_ids=train_ids, flag=1)
-    val_dataset = SmokeDataset(args.json_path, args.image_folder, transform=image_transform,
-                               mask_transform=mask_transform, image_ids=val_ids, flag=2)
-    test_dataset = SmokeDataset(args.json_path, args.image_folder, transform=image_transform,
-                                mask_transform=mask_transform, image_ids=test_ids, flag=2)
+    train_dataset = SmokeDataset(args.json_path, args.image_folder,
+                                 args.smoke5k_path, args.Rise_path,
+                                 transform=image_transform,
+                                 mask_transform=mask_transform,
+                                 image_ids=train_ids,
+                                 return_both=args.augmentation,
+                                 smoke5k=args.smoke5k, Rise=args.Rise)
+
+    print(f"Total train samples: {len(train_dataset)}")
+
+    random_indices = random.sample(range(len(train_dataset)), 10)
+
+    # Visualize each
+    for idx in random_indices:
+        show_image_mask(train_dataset, idx)
+
+    val_dataset = SmokeDataset(args.json_path, args.image_folder,
+                               args.smoke5k_path, args.Rise_path,
+                               transform=image_transform,
+                               mask_transform=mask_transform,
+                               image_ids=val_ids
+                               )
+
+    test_dataset = SmokeDataset(args.json_path, args.image_folder,
+                                args.smoke5k_path, args.Rise_path,
+                                transform=image_transform,
+                                mask_transform=mask_transform,
+                                image_ids=test_ids
+                                )
+
+    # original_samples = sum(1 for item in train_dataset.image_data if item['source'] == 'coco')
+    # smoke5k_samples = sum(1 for item in train_dataset.image_data if item['source'] == 'smoke5k')
+
+    # original_weight = 1.0
+    # smoke5k_weight = original_samples / (smoke5k_samples +1e-6)
+
+    # weights = [
+    # original_weight if item["source"] == "original" else smoke5k_weight
+    # for item in train_dataset.image_data
+    # ]
+
+    # sampler = WeightedRandomSampler(
+    #     weights=weights,                  # List of weights per sample
+    #     num_samples=len(train_dataset), # Total samples per "epoch"
+    #     replacement=True                  # re-sampling of minority classes
+    # )
 
     # Create DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset,
+                              batch_size=args.batch_size,
+                              shuffle=True
+                              # sampler=sampler
+                              #  drop_last=True
+                              )
+    print(f"Total train batches: {len(train_loader)}")
+
+    val_loader = DataLoader(val_dataset,
+                            batch_size=args.val_batch_size,
+                            shuffle=False
+                            )
+
+    test_loader = DataLoader(test_dataset,
+                             batch_size=args.batch_size,
+                             shuffle=False
+                             )
 
     # ---- Load DeepLabV3+ Model ----
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,6 +202,7 @@ if __name__ == "__main__":
 
     elif args.loss_type == 'BCE':
         criterion = BCEWithLogitsLoss()
+
     elif args.loss_type == 'focal_loss':
         criterion = dice_loss
         # criterion = FocalLoss()
@@ -157,7 +232,7 @@ if __name__ == "__main__":
         train_accuracy = 0.0
         train_iou = 0.0
 
-        for i, (images, masks) in enumerate(train_loader):
+        for i, (images, masks, _) in enumerate(train_loader):
             # if i >= max_batches:
             #     break  # Stop after two batches
 
@@ -205,7 +280,7 @@ if __name__ == "__main__":
         val_iou = 0.0
 
         with torch.no_grad():
-            for images, masks in val_loader:
+            for i, (images, masks, _) in enumerate(val_loader):
                 images, masks = images.to(device), masks.to(device)
                 outputs = model(images)
 
@@ -265,7 +340,7 @@ if __name__ == "__main__":
     test_f1_crf = 0.0
 
     with torch.no_grad():
-        for i, (images, masks) in enumerate(test_loader):
+        for i, (images, masks, _) in enumerate(test_loader):
             images = images.to(device)
             masks = masks.to(device)
 
@@ -287,6 +362,7 @@ if __name__ == "__main__":
             # Additional metrics
             test_dice += calculate_dice(outputs.squeeze(1), masks.squeeze(1))
             test_f1 += calculate_f1(outputs.squeeze(1), masks.squeeze(1))
+
             # Apply CRF post-processing
             for j in range(images.size(0)):
                 # Get original image and convert to numpy
@@ -311,8 +387,9 @@ if __name__ == "__main__":
                 mask_j = masks[j, 0]
                 test_accuracy_crf += calculate_accuracy(refined_mask_tensor, mask_j)
                 test_iou_crf += calculate_iou(refined_mask_tensor, mask_j)
-                test_dice_crf += calculate_dice(refined_mask_tensor, mask_j)
-                test_f1_crf += calculate_f1(refined_mask_tensor, mask_j)
+                # test_dice_crf += calculate_dice(refined_mask_tensor, mask_j)
+                # test_f1_crf += calculate_f1(refined_mask_tensor, mask_j)
+
     # Calculate averages
     avg_test_loss = test_loss / len(test_loader)
     avg_test_acc = test_accuracy / len(test_loader)
@@ -321,11 +398,10 @@ if __name__ == "__main__":
     avg_test_f1 = test_f1 / len(test_loader)
 
     # Calculate CRF averages
-    total_samples = len(test_dataset)
-    avg_test_acc_crf = test_accuracy_crf / total_samples
-    avg_test_iou_crf = test_iou_crf / total_samples
-    avg_test_dice_crf = test_dice_crf / total_samples
-    avg_test_f1_crf = test_f1_crf / total_samples
+    avg_test_acc_crf = test_accuracy_crf / len(test_dataset)
+    avg_test_iou_crf = test_iou_crf / len(test_dataset)
+    # avg_test_dice_crf = test_dice_crf / len(test_dataset)
+    # avg_test_f1_crf = test_f1_crf /len(test_dataset)
 
     print("\nTest Results:")
     print(f"Loss: {avg_test_loss:.4f} | Acc: {avg_test_acc:.4f} | mIoU: {avg_test_iou:.4f}")
@@ -333,5 +409,5 @@ if __name__ == "__main__":
 
     print("\nTest Results with CRF:")
     print(f"Acc: {avg_test_acc_crf:.4f} | mIoU: {avg_test_iou_crf:.4f}")
-    print(f"Dice: {avg_test_dice_crf:.4f} | F1: {avg_test_f1_crf:.4f}")
+    # print(f"Dice: {avg_test_dice_crf:.4f} | F1: {avg_test_f1_crf:.4f}")
     print("Testing complete!")

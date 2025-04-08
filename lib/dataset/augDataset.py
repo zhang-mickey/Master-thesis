@@ -9,9 +9,10 @@ from PIL import Image
 from torchvision import transforms
 import random
 from lib.utils.augmentation import *
+import albumentations as A
 
 
-class SmokeDataset(Dataset):
+class augDataset(Dataset):
     def __init__(self,
                  json_path, img_dir, smoke5K_path, Rise_path,
                  transform=None, mask_transform=None,
@@ -27,16 +28,17 @@ class SmokeDataset(Dataset):
         self.img_dir = img_dir
         self.transform = transform
         self.mask_transform = mask_transform
+        # self.img_info = {img['id']: img for img in self.data['images']}
         self.img_info = image_ids if image_ids is not None else [image['id'] for image in self.data['images']]
         self.annotations = self.data['annotations']
-        self.flag = return_both
+        # self.smoke_dataset=smoke_dataset
         self.image_data = []
         self.image_ids_mapping = {}  # Store {index: image_id}
-
         self.smoke5k_path = smoke5K_path
         self.smoke5k = smoke5k
         self.Rise = Rise
         self.Rise_path = Rise_path
+        self.return_both = return_both
 
         # load coco dataset
         for image in self.data['images']:
@@ -47,8 +49,7 @@ class SmokeDataset(Dataset):
                         'path': image_path,
                         'label': 1,
                         'source': 'coco',
-                        'mask_path': None,
-                        'image_id': image['id']
+                        'mask_path': None
                     })
 
                 self.image_ids_mapping[len(self.image_data) - 1] = f"coco_{image['id']}"
@@ -93,52 +94,58 @@ class SmokeDataset(Dataset):
                 img_path = os.path.join(Rise_path, img_file)
                 self.image_data.append({
                     'path': img_path,
-                    'label': 0,
+                    'label': 0,  # 0 for non-smoke
                     'source': 'rise',
                     'mask_path': None
                 })
                 self.image_ids_mapping[len(self.image_data) - 1] = f"rise_{img_file}"
 
     def __len__(self):
-        return len(self.image_data)
+        # Double length when returning both versions
+        return 2 * len(self.image_data) if self.return_both else len(self.image_data)
 
     def __getitem__(self, idx):
+        # Determine if we need to return original or augmented
+        is_augmented = False
+        if self.return_both:
+            original_idx = idx % len(self.image_data)
+            is_augmented = idx >= len(self.image_data)
+        else:
+            original_idx = idx
 
-        item = self.image_data[idx]
+        item = self.image_data[original_idx]
         source = item['source']
-        # loading for both datasets
+
+        # Load base image and mask
         image = Image.open(item['path']).convert('RGB')
 
+        # Load mask based on source
         if source == 'coco':
-            coco_id = item['image_id']
-            mask = self._load_coco_mask(coco_id)
-        elif source == 'rise':
-            # zero_mask
+            mask = self._load_coco_mask(original_idx)
+        elif source == 'smoke5k':
+            mask = np.array(Image.open(item['mask_path']).convert('L')) // 255
+        else:  # RISE
             mask = np.zeros((image.height, image.width), dtype=np.uint8)
+
+        # Apply augmentations if needed
+        if is_augmented:
+            image, mask = self._apply_augmentations(image, mask)
+            image_id = f"{self.image_ids_mapping[original_idx]}_aug"
         else:
-            # Smoke5K processing
-            mask = Image.open(item['mask_path']).convert('L')
-            mask = np.array(mask) // 255  # Convert to binary mask
+            image_id = self.image_ids_mapping[original_idx]
+
         if isinstance(mask, np.ndarray):
             mask = Image.fromarray(mask)
-
-        if self.flag == True:
-            image, mask = self._apply_augmentations(image, mask)
-
-        # Apply transformations
+        # Apply additional transforms
         if self.transform:
             image = self.transform(image)
         if self.mask_transform:
             mask = self.mask_transform(mask)
 
-        if self.flag == False:
-            return image, mask, self.image_ids_mapping[idx]
-
-        return image, mask, self.image_ids_mapping[idx]
+        return image, mask, image_id
 
     def _load_coco_mask(self, idx):
-        img_info = next(img for img in self.data['images'] if img['id'] == idx)
-
+        img_info = self.data['images'][idx]
         mask = np.zeros((img_info['height'], img_info['width']), dtype=np.uint8)
         image_annotations = [ann for ann in self.annotations if ann['image_id'] == img_info['id']]
         for ann in image_annotations:
@@ -146,7 +153,6 @@ class SmokeDataset(Dataset):
                 for poly in ann['segmentation']:
                     poly = np.array(poly).reshape((len(poly) // 2, 2)).astype(np.int32)
                     cv2.fillPoly(mask, [poly], 1)
-
             elif isinstance(ann['segmentation'], dict):
                 rle = coco_mask.decode(ann['segmentation'])
                 if rle.shape != mask.shape:
@@ -156,21 +162,21 @@ class SmokeDataset(Dataset):
         return mask
 
     def _apply_augmentations(self, image, mask):
-        """Apply identical augmentations to image and mask"""
-        # Random cropping
-        # if random.random() < 0.2:
-        #     # original 1920*1080
-        #     image, mask = RandomCrop_For_Segmentation(crop_size=(1720, 900))(image, mask)
-        # else:
-        #     image, mask = CenterCrop_For_Segmentation(crop_size=(1720, 900))(image, mask)
+        """Apply strong augmentations"""
+        # Convert to numpy for Albumentations
+        image_np = np.array(image)
+        mask_np = np.array(mask)
 
-        # Color jitter (only on images)
-        image = ColorJitterTransform(brightness=0.2, contrast=0.2,
-                                     saturation=0.2, hue=0.1, p=0.5)(image)
+        # Define strong augmentations
+        aug = A.Compose([
+            # A.RandomResizedCrop(512, 512, scale=(0.5, 1.0)),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.2),
+            # A.Rotate(limit=30, p=0.5),
+            # A.ColorJitter(p=0.5),
+            # A.GaussianBlur(p=0.3),
+            # A.RandomBrightnessContrast(p=0.5)
+        ])
 
-        # Random horizontal flip
-        # if random.random() < 0.5:
-        #     image = transforms.functional.hflip(image)
-        #     mask = transforms.functional.hflip(mask)
-
-        return image, mask
+        augmented = aug(image=image_np, mask=mask_np)
+        return Image.fromarray(augmented['image']), Image.fromarray(augmented['mask'])

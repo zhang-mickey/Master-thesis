@@ -7,4 +7,6 @@ lib/dataset/frames/
 *.json
 *.xml
 *.iml
+*.mp4
+*.jpg
 smoke-segmentation.v5i.coco-segmentation/
