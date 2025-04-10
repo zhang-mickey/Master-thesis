@@ -14,6 +14,7 @@ from timm.models.vision_transformer import _create_vision_transformer
 import torch.utils.model_zoo as model_zoo
 
 
+# resize the pos_embed when the current model size is different from pretrained weights
 def checkpoint_filter_fn(state_dict, model):
     """ convert patch embedding weight from manual patchify + linear proj to conv"""
     out_dict = {}
@@ -310,7 +311,9 @@ class Segmenter(nn.Module):
         self.image_size = image_size
 
     def forward(self, x):
+        # (B, C, H_original, W_original)
         B, C, H_original, W_original = x.shape
+
         x = padding(x, self.patch_size)
         H, W = x.shape[2:]
 
@@ -326,6 +329,7 @@ class Segmenter(nn.Module):
         masks = unpadding(masks, (H_original, W_original))
         # print("Unpadded Masks Shape:", masks.shape)
 
+        print(f"ViTSegmenter shape: {masks.shape}")  # torch.Size([8, 1, 512, 512])
         return masks
 
 # #       Segmenter model

@@ -9,4 +9,5 @@ lib/dataset/frames/
 *.iml
 *.mp4
 *.jpg
+*.png
 smoke-segmentation.v5i.coco-segmentation/

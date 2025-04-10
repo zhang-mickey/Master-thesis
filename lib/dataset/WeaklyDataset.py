@@ -10,9 +10,14 @@ import os
 from albumentations import Compose
 from albumentations.augmentations.dropout.coarse_dropout import CoarseDropout
 from lib.utils.augmentation import *
+
+import matplotlib.pyplot as plt
+
+
 def pil_to_cv2(pil_img):
     cv2_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     return cv2_img
+
 
 def split_non_smoke_dataset(non_smoke_folder, train_ratio=0.7, val_ratio=0.1, test_ratio=0.2):
     """
@@ -60,7 +65,8 @@ def split_non_smoke_dataset(non_smoke_folder, train_ratio=0.7, val_ratio=0.1, te
 class SmokeWeaklyDataset(Dataset):
     def __init__(self,
                  annotations_file, images_folder,
-                 transform=None, mask_transform=None,
+                 transform=None,
+                 mask_transform=None,
                  image_ids=None,
                  non_smoke_image_folder=None,
                  non_smoke_files=None,
@@ -97,7 +103,6 @@ class SmokeWeaklyDataset(Dataset):
         # Map category_id to supercategory
         self.category_to_supercategory = {category['id']: category['supercategory'] for category in
                                           self.data['categories']}
-        # Convert to binary labels (smoke vs non-smoke)
         self.image_labels = {}
 
         for image_id, annotations in self.image_annotations.items():
@@ -116,7 +121,9 @@ class SmokeWeaklyDataset(Dataset):
         for image in self.data['images']:
             if image['id'] in self.image_ids:
                 image_path = os.path.join(images_folder, image['file_name'])
-                self.image_data.append((image_path, 1))
+                self.image_data.append((
+                    image_path,
+                    1))
 
                 self.image_ids_mapping[len(self.image_data) - 1] = f"coco_{image['id']}"
 
@@ -138,40 +145,67 @@ class SmokeWeaklyDataset(Dataset):
     def __getitem__(self, index):
         # Load image and label
         image_path, label = self.image_data[index]
-        image = Image.open(image_path).convert("RGB")
+        # image = Image.open(image_path).convert("RGB")
         image_ids = self.image_ids_mapping[index]
 
-        if self.flag == True:
-            image_np = np.array(image)
-            crop_height = int(image_np.shape[0] * 0.05)
-            image_cropped = image_np[crop_height:, :, :]
-            image = Image.fromarray(image_cropped)
+        # if self.flag == True:
 
         mask = None  # Initialize mask to None
 
         if label == 1 and self.smoke_dataset is not None:
             # Look up this image in the smoke dataset
             for i in range(len(self.smoke_dataset)):
-                smoke_img, smoke_mask, smoke_id = self.smoke_dataset[i]
+                smoke_image, smoke_mask, smoke_id, labels = self.smoke_dataset[i]
                 if str(smoke_id) == str(image_ids):
-                    smoke_mask_np = smoke_mask.squeeze().numpy()
-                    mask = smoke_mask_np[crop_height:, :]  # Crop same way as image
+                    image = smoke_image
+                    mask = smoke_mask
+                    # mask= smoke_mask.squeeze().numpy()
+
+                    # image_np = np.array(smoke_img)
+                    # crop_height = int(image_np.shape[0] * 0.1)
+                    # image_cropped = image_np[crop_height:, :, :]
+                    # crop_left = int(image_np.shape[0] * 0.22)
+                    # image_cropped = image_cropped[:,crop_left :, :]
+                    # image = Image.fromarray(image_cropped)
+
+                    # mask_np = np.array(mask)
+                    # crop_height = int(mask_np.shape[0] * 0.1)
+                    # mask_cropped = mask_np[crop_height:, :]
+                    # crop_left = int(mask_np.shape[0] * 0.22)
+                    # mask_cropped = mask_cropped[:,crop_left :]
+                    # mask = Image.fromarray(mask_cropped)
+                    image = np.transpose(image, (1, 2, 0))
+
+                    plt.subplot(1, 2, 1)
+                    plt.imshow(image)
+                    plt.title('Image')
+                    plt.subplot(1, 2, 2)
+
+                    plt.imshow(mask)
+                    plt.title('Mask')
+                    plt.show()
+                    image = np.transpose(image, (2, 0, 1))
                     break
 
         # If it's a non-smoke image and you're doing augmentation
         elif label == 0 and self.smoke_dataset is not None:
             # image, label, aug_mask = self.smoke_aug(image, label, return_mask=True)
+            image = Image.open(image_path).convert("RGB")
             if random.random() < 0.5:
                 # 1. Randomly pick a smoke image + mask
                 rand_index = np.random.randint(0, len(self.smoke_dataset))
-                smoke_img, smoke_mask, smoke_id = self.smoke_dataset[rand_index]
+                smoke_img, smoke_mask, smoke_id, labels = self.smoke_dataset[rand_index]
 
                 # Convert PIL to numpy
                 non_smoke_np = np.array(image)
                 smoke_np = np.array(smoke_img)
 
-                print("shape of ",non_smoke_np.shape) # (570, 600, 3)
-                print("shape of smoke_img",smoke_img.shape) #torch.Size([3, 512, 512])
+                # smoke_np = np.transpose(smoke_np, (1, 2, 0))
+                # plt.imshow(smoke_np)
+                # plt.show()
+
+                # print("shape of ",non_smoke_np.shape) # (570, 600, 3)
+                # print("shape of smoke_img",smoke_img.shape) #torch.Size([3, 512, 512])
 
                 mask_np = smoke_mask.squeeze().numpy()
 
@@ -180,41 +214,75 @@ class SmokeWeaklyDataset(Dataset):
                     if len(non_smoke_np.shape) == 3 and non_smoke_np.shape[2] == 3:
                         # Convert from (C, H, W) to (H, W, C)
                         smoke_np = np.transpose(smoke_np, (1, 2, 0))
+                    smoke_np = (smoke_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
+                    smoke_np = np.clip(smoke_np, 0, 255).astype(np.uint8)
+
                     smoke_np = cv2.resize(smoke_np, (non_smoke_np.shape[1], non_smoke_np.shape[0]))
-                    smoke_np = (smoke_np * 255).astype(np.uint8)
-                    mask_np = cv2.resize(mask_np, (non_smoke_np.shape[1], non_smoke_np.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+                    # smoke_np = (smoke_np * 255).astype(np.uint8)
+
+                    # plt.imshow(smoke_np)
+                    # plt.show()
+                    #
+                    # mean = [0.485, 0.456, 0.406]
+                    # std = [0.229, 0.224, 0.225]
+                    # smoke_np = denormalize( smoke_np, mean, std)
+
+                    mask_np = cv2.resize(mask_np, (non_smoke_np.shape[1], non_smoke_np.shape[0]),
+                                         interpolation=cv2.INTER_NEAREST)
                     # 2. Copy-paste using mask
                 pasted_image = non_smoke_np.copy()
-                mask_bool = mask_np > 0  # shape (H, W)
 
                 # Apply the mask to each RGB channel
-                for c in range(3):  # RGB channels
-                    pasted_image[:, :, c][mask_bool] = smoke_np[:, :, c][mask_bool]
-                # 3. New mask
-                mask = (mask_np > 0).astype(np.uint8) * 255
-                # 4. Convert back to PIL
 
+                # print("shape of ",pasted_image.shape)
+                # print("shape of smoke_img",smoke_np.shape)
+                # pasted_image=pil_to_cv2(pasted_image)
+                # smoke_np=pil_to_cv2(smoke_np)
+                # for c in range(3):  # RGB channels
+                #     pasted_image[:, :, c][mask_bool] = smoke_np[:, :, c][mask_bool]
+                # smoke_np = smoke_np.astype(np.uint8)
+                # pasted_image = pasted_image.astype(np.uint8)
+                # Create mask with 3 channels
+                mask_bool_3d = (mask_np > 0)[..., None]  # Shape: (H, W, 1)
+                mask_bool_3d = np.repeat(mask_bool_3d, 3, axis=2)  # Now shape: (H, W, 3)
+
+                # Apply the mask
+                # print("smoke_np.dtype",smoke_np.dtype)
+                # print("pasted_image.dtype",pasted_image.dtype)
+
+                pasted_image = np.where(mask_bool_3d, smoke_np, pasted_image)
+
+                mask = (mask_np > 0).astype(np.uint8) * 255
                 # 4. Convert back to PIL for transforms
                 image = Image.fromarray(pasted_image.astype(np.uint8))
+
                 # mask = Image.fromarray(mask.astype(np.uint8))
 
-                # Optional: change label to 1 since now it has smoke
+                # plt.figure(figsize=(12, 6))
+                # plt.subplot(1, 3, 1)
+                #
+                # plt.imshow(image)
+                #
+                # plt.subplot(1, 3, 2)
+                # plt.imshow(smoke_np)
+                #
+                # plt.subplot(1, 3, 3)
+                # plt.imshow(mask_np)
+                #
+                # plt.show()
                 label = 1
 
             else:
                 mask = np.zeros(image.size[::-1], dtype=np.uint8)  # Empty mask for non-smoke
 
         if isinstance(mask, np.ndarray):
-            # Check if mask is 1D and reshape it if needed
             if len(mask.shape) == 1:
-                # Reshape 1D mask to 2D (assuming it's a square)
                 side_length = int(np.sqrt(mask.shape[0]))
                 mask = mask.reshape(side_length, side_length)
 
         elif isinstance(mask, torch.Tensor):
-            # If it's already a tensor, ensure it has channel dimension
             if len(mask.shape) == 1:
-                # Reshape 1D tensor to 2D
                 side_length = int(np.sqrt(mask.shape[0]))
                 mask = mask.reshape(1, side_length, side_length)  # Add channel dimension
 

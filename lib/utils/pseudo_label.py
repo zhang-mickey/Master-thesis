@@ -22,7 +22,7 @@ def reshape_transform(tensor):
     batch_size, num_tokens, hidden_dim = tensor.shape
 
     # Exclude class token
-    num_patches = num_tokens - 1  
+    num_patches = num_tokens - 1
 
     # Compute spatial size (assuming square patches)
     height = width = int(num_patches ** 0.5)
@@ -35,6 +35,7 @@ def reshape_transform(tensor):
     # Change from (B, H, W, C) to (B, C, H, W) for CNN-like processing
     result = result.permute(0, 3, 1, 2)
     return result
+
 
 def show_cam_on_image(img: np.ndarray,
                       mask: np.ndarray,
@@ -69,6 +70,7 @@ def show_cam_on_image(img: np.ndarray,
     cam = cam / np.max(cam)
     return np.uint8(255 * cam)
 
+
 class ClassifierOutputTarget:
     def __init__(self, category):
         self.category = category
@@ -86,7 +88,7 @@ def get_cam_for_image(image_tensor, model, target_layers, target_category=None):
         model: Classification model
         target_layers: List of target layers for CAM generation
         target_category: Target category for CAM (None for predicted class)
-        
+
     Returns:
         cam_image: CAM visualization
         grayscale_cam: Grayscale CAM
@@ -96,14 +98,14 @@ def get_cam_for_image(image_tensor, model, target_layers, target_category=None):
     # Create GradCAM object
     # print([layer.__class__.__name__ for layer in target_layers])
 
-    cam = GradCAM(model=model, target_layers=target_layers,reshape_transform=reshape_transform)
-    
+    cam = GradCAM(model=model, target_layers=target_layers, reshape_transform=reshape_transform)
+
     # Get model prediction
     with torch.no_grad():
         image_tensor.requires_grad = True
         output = model(image_tensor)
-        if isinstance(output,tuple):
-            output=output[0]
+        if isinstance(output, tuple):
+            output = output[0]
 
     # Get predicted class if target_category is None
     if target_category is None:
@@ -116,28 +118,27 @@ def get_cam_for_image(image_tensor, model, target_layers, target_category=None):
     # Generate CAM
     grayscale_cam = cam(image_tensor, [ClassifierOutputTarget(target_category)])
     grayscale_cam = grayscale_cam[0, :]  # Get CAM for first image in batch
-    
+
     # Convert image tensor to numpy for visualization
     image_np = image_tensor[0].cpu().detach().numpy().transpose(1, 2, 0)
-    
+
     # Normalize image for visualization
     image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
-    
+
     # Create heatmap
     heatmap = cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET)
     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
     heatmap = np.float32(heatmap) / 255
-    
+
     # Combine image and heatmap
     cam_image = heatmap + np.float32(image_np)
     cam_image = cam_image / np.max(cam_image)
-    
+
     return cam_image, grayscale_cam, pred_class
 
-def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, num_samples_per_batch=5, max_batches=10):
+
+def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, num_samples_per_batch=5, max_batches=15):
     """
-    Generate and visualize CAMs for multiple batches of images.
-    
     Args:
         dataloader: DataLoader object providing batches of images.
         model: Trained model.
@@ -153,7 +154,7 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
 
     batch_count = 0
 
-    for batch_idx, (images, labels,image_id) in enumerate(dataloader):
+    for batch_idx, (images, labels, image_id, mask) in enumerate(dataloader):
         if max_batches is not None and batch_count >= max_batches:
             break  # Stop if max_batches limit is reached
 
@@ -166,18 +167,23 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
         images = images[:num_samples]
         labels = labels[:num_samples]
 
-        # Prepare figure
-        fig, axs = plt.subplots(num_samples, 3, figsize=(15, 5 * num_samples))
+        # Prepare figure (4 columns now: Original, CAM, Grayscale CAM, Mask)
+        fig, axs = plt.subplots(num_samples, 4, figsize=(20, 5 * num_samples))
 
         for i, (image, label) in enumerate(zip(images, labels)):
             image_tensor = image.unsqueeze(0)  # Add batch dimension
-            
-            # Generate CAM
             cam_image, grayscale_cam, pred_class = get_cam_for_image(image_tensor, model, target_layers)
-            
-            # Convert image tensor to numpy for visualization
+
+            # Convert image to NumPy for display
             image_np = image.cpu().numpy().transpose(1, 2, 0)
             image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())  # Normalize
+
+            # Convert mask to NumPy (assuming mask is [B, H, W] or [B, 1, H, W])
+            mask_np = mask[i].cpu().numpy()
+            if mask_np.ndim == 3:  # [1, H, W]
+                mask_np = mask_np.squeeze(0)
+            if mask_np.max() > 1:
+                mask_np = mask_np / 255.0  # Normalize if needed
 
             # Plot original image
             axs[i, 0].imshow(image_np)
@@ -194,6 +200,11 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
             axs[i, 2].set_title("Grayscale CAM")
             axs[i, 2].axis('off')
 
+            # Plot ground truth mask
+            axs[i, 3].imshow(mask_np, cmap='gray')
+            axs[i, 3].set_title("Ground Truth Mask")
+            axs[i, 3].axis('off')
+
         plt.tight_layout()
 
         # Save or show results
@@ -204,79 +215,26 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
             plt.show()
 
         batch_count += 1
-# def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, num_samples=5):
-#     """
-#     Generate and visualize CAMs for a batch of images
-#     """
-#     device = next(model.parameters()).device
-    
-#     # Get a batch of images
-#     images, labels = next(iter(dataloader))
-    
-#     # Limit to num_samples
-#     images = images[:num_samples]
-#     labels = labels[:num_samples]
-    
-#     # Generate CAMs
-#     fig, axs = plt.subplots(num_samples, 3, figsize=(15, 5 * num_samples))
-    
-#     for i, (image, label) in enumerate(zip(images, labels)):
-#         # Move image to device
-#         image_tensor = image.unsqueeze(0).to(device)
-        
-#         # Generate CAM
-#         cam_image, grayscale_cam, pred_class = get_cam_for_image(
-#             image_tensor, model, target_layers
-#         )
-        
-#         # Convert image tensor to numpy for visualization
-#         image_np = image.cpu().numpy().transpose(1, 2, 0)
-#         image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
-        
-#         # Plot original image
-#         axs[i, 0].imshow(image_np)
-#         axs[i, 0].set_title(f"Original Image (Label: {label.item()})")
-#         axs[i, 0].axis('off')
-        
-#         # Plot CAM
-#         axs[i, 1].imshow(cam_image)
-#         axs[i, 1].set_title(f"CAM (Pred: {pred_class})")
-#         axs[i, 1].axis('off')
-        
-#         # Plot grayscale CAM
-#         axs[i, 2].imshow(grayscale_cam, cmap='gray')
-#         axs[i, 2].set_title("Grayscale CAM")
-#         axs[i, 2].axis('off')
-    
-#     plt.tight_layout()
-    
-#     if save_dir:
 
-#         os.makedirs(save_dir, exist_ok=True)
-#         plt.savefig(f"{save_dir}/cam_visualization.png")
-#         plt.close()
-#     else:
-#         plt.show()
 
 def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold):
     """
     Generate pseudo-labels from CAMs for a dataset using image IDs for filenames
     """
 
-    
     os.makedirs(save_dir, exist_ok=True)
     device = next(model.parameters()).device
     model.eval()  # Set model to evaluation mode
 
     # Create GradCAM object
-    cam = GradCAM(model=model, 
-                target_layers=target_layers,
-                reshape_transform=reshape_transform)
+    cam = GradCAM(model=model,
+                  target_layers=target_layers,
+                  reshape_transform=reshape_transform)
 
     for batch_idx, (images, _, image_ids) in enumerate(dataloader):
         # Move entire batch to device
         images = images.to(device)
-        
+
         with torch.no_grad():
             outputs = model(images)
             if isinstance(outputs, tuple):  # Handle tuple output
@@ -287,34 +245,35 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
         for img_idx, (image, pred_class, image_id) in enumerate(zip(images, pred_classes, image_ids)):
             # Generate CAM for predicted class
             targets = [ClassifierOutputTarget(pred_class)]
-            
+
             # Unsqueeze to add batch dimension
-            grayscale_cam = cam(input_tensor=image.unsqueeze(0), 
-                             targets=targets)
-            
+            grayscale_cam = cam(input_tensor=image.unsqueeze(0),
+                                targets=targets)
+
             # Remove batch dimension and ensure 2D array
             grayscale_cam = grayscale_cam[0]  # Shape (H, W)
 
             # Create binary mask
             pseudo_label = (grayscale_cam > threshold).astype(np.float32)
-            
+
             if isinstance(image_id, torch.Tensor):
                 img_id = image_id.item()  # Convert tensor to Python scalar
             elif isinstance(image_id, str) and image_id.isdigit():
                 img_id = int(image_id)  # Convert string number to int
             else:
-                img_id = image_id 
-            
-            # Save pseudo-label
+                img_id = image_id
+
+                # Save pseudo-label
             cv2.imwrite(
                 os.path.join(save_dir, f"pseudo_label_{img_id}.png"),
                 (pseudo_label * 255).astype(np.uint8)
             )
-            
+
             # Save CAM visualization
             heatmap = cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET)
+
             cv2.imwrite(
-                os.path.join(save_dir, f"cam_vis_{img_id}.png"), 
+                os.path.join(save_dir, f"cam_vis_{img_id}.png"),
                 heatmap
             )
 
