@@ -10,40 +10,42 @@ from PIL import Image
 class CropDataset(Dataset):
     def __init__(self,
                  image_dir,
-                 mask_dir=None,
+                 mask_dir,
                  non_smoke_dir=None,
+
                  transform=None,
                  mask_transform=None,
                  img_size=(512, 512)):
-        """
-        Args:
-            image_dir: Path to directory with smoke images
-            mask_dir: Path to directory with masks
-            non_smoke_dir: Path to directory with non-smoke images
-            transform: Transformations for images
-            mask_transform: Transformations for masks
-            img_size: Target image size (H, W)
-        """
+
         self.img_size = img_size
         self.samples = []
+        self.image_dir = image_dir
+        self.mask_dir = mask_dir
+        self.non_smoke_dir = non_smoke_dir
 
-        # Load smoke images and masks
-        if image_dir and mask_dir:
-            for img_name in os.listdir(image_dir):
+        # # Load smoke images and masks
+        # print("Image Dir:", self.image_dir)
+        # print("Mask Dir:", self.mask_dir)
+
+        if self.image_dir and self.mask_dir:
+            for img_name in sorted(os.listdir(image_dir)):
                 if img_name.startswith('.'): continue
                 img_path = os.path.join(image_dir, img_name)
                 mask_path = os.path.join(mask_dir, f"mask_{img_name}")
                 if os.path.exists(mask_path):
+                    # print("os.path.exists(mask_path)",os.path.exists(mask_path))
                     self.samples.append({
                         'image': img_path,
                         'mask': mask_path,
                         'label': 1,
                         'is_smoke': True
                     })
+        print("len(self.samples)", len(self.samples))
 
         # Load non-smoke images
-        if non_smoke_dir:
-            for img_name in os.listdir(non_smoke_dir):
+
+        if self.non_smoke_dir:
+            for img_name in sorted(os.listdir(non_smoke_dir)):
                 if img_name.startswith('.'): continue
                 img_path = os.path.join(non_smoke_dir, img_name)
                 self.samples.append({
@@ -52,6 +54,8 @@ class CropDataset(Dataset):
                     'label': 0,
                     'is_smoke': False
                 })
+
+        print("len(self.samples)", len(self.samples))
 
         self.transform = transform or transforms.Compose([
             transforms.Resize(img_size),

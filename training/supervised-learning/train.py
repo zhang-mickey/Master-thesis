@@ -13,12 +13,14 @@ from sklearn.model_selection import train_test_split
 from torch.optim.lr_scheduler import _LRScheduler, StepLR
 from torch.utils.data import WeightedRandomSampler
 import matplotlib.pyplot as plt
+from torch.utils.data import random_split
+
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
 
 # Add the project root to sys.path
 sys.path.append(project_root)
-
+from lib.dataset.cropDataset import *
 from lib.dataset.SmokeDataset import *
 from lib.dataset.augDataset import *
 from lib.network.backbone import choose_backbone
@@ -48,13 +50,17 @@ class PolyLR(_LRScheduler):
 def parse_args():
     parser = argparse.ArgumentParser(description="Supervised learning")
     # Dataset
-    parser.add_argument("--json_path", type=str, default=os.path.join(project_root,
-                                                                      "smoke-segmentation.v5i.coco-segmentation/test/_annotations.coco.json"),
+    parser.add_argument("--json_path", type=str,
+                        default=os.path.join(project_root,
+                                             "smoke-segmentation.v5i.coco-segmentation/test/_annotations.coco.json"),
                         help="Path to COCO annotations JSON file")
+
     parser.add_argument("--image_folder", type=str,
                         default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/test/"),
                         help="Path to the image dataset folder")
-    parser.add_argument("--save_model_path", type=str, default=os.path.join(project_root, "model/model_supervised.pth"),
+
+    parser.add_argument("--save_model_path", type=str,
+                        default=os.path.join(project_root, "model/model_supervised.pth"),
                         help="Path to save the trained model")
 
     parser.add_argument("--smoke5k", type=bool, default=False, help="use smoke5k or not")
@@ -69,25 +75,40 @@ def parse_args():
     parser.add_argument("--Dutch_path", type=str, default=os.path.join(project_root, "lib/dataset/frames/"),
                         help="path to Dutch")
 
+    parser.add_argument("--crop_smoke_image_folder", type=str,
+                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/"),
+                        help="Path to the cropped smoke image dataset folder")
+
+    parser.add_argument("--crop_mask_folder", type=str,
+                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/"),
+                        help="Path to the cropped image dataset mask folder")
+
+    parser.add_argument("--crop_non_smoke_folder", type=str,
+                        default=os.path.join(project_root,
+                                             "smoke-segmentation.v5i.coco-segmentation/non_smoke_images/"),
+                        help="Path to the cropped image dataset mask folder")
+
+    parser.add_argument("--use_crop", type=bool, default=True, help="use cropped image or not")
+
     # Train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
     parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
     parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
-    parser.add_argument("--num_epochs", type=int, default=2, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=50, help="epoch number")
     parser.add_argument("--lr", type=float, default=0.05, help="initial learning rate")
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
 
     # parser.add_argument("--backbone", type=str, default='conformer',
-    # #                 help="choose backone")
+    #                 help="choose backone")
     # parser.add_argument("--backbone", type=str, default='Segmenter',
     #                 help="choose backone")
     # parser.add_argument("--backbone", type=str, default="deeplabv3plus_Xception",
-    #                     help="choose backone")
+    # help="choose backone")
 
     parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet101",
-         help="choose backone")
+                        help="choose backone")
 
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -110,6 +131,8 @@ def parse_args():
 if __name__ == "__main__":
     print("Starting training...")
     args = parse_args()
+    print(vars(args))
+
     print(torch.cuda.is_available())
 
     # set random seed
@@ -117,88 +140,110 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(args.manual_seed)
     np.random.seed(args.manual_seed)
     random.seed(args.manual_seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # ---- preprocess ----
     # Get transformations
     image_transform, mask_transform = get_transforms(args.img_size)
 
     # Split dataset
-    train_ids, val_ids, test_ids = split_dataset(args.json_path, args.image_folder)
+    if args.use_crop:
+        train_dataset = CropDataset(
+            args.crop_smoke_image_folder,
+            args.crop_mask_folder,
+            transform=image_transform,
+            mask_transform=mask_transform,
+        )
+        total_size = len(train_dataset)
+        train_size = int(0.8 * total_size)
+        val_size = int(0.1 * total_size)
+        test_size = total_size - train_size - val_size
 
-    print(f"Dataset split: Train={len(train_ids)}, Val={len(val_ids)}, Test={len(test_ids)}")
-    # Load dataset with transformations
-    # dataset = SmokeDataset(json_path, image_folder, transform=image_transform, mask_transform=mask_transform)
-    # dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+        # Split dataset
+        train_subset, val_subset, test_subset = random_split(train_dataset, [train_size, val_size, test_size])
 
-    # Load dataset
-    train_dataset = SmokeDataset(args.json_path, args.image_folder,
-                                 args.smoke5k_path, args.Rise_path,
-                                 transform=image_transform,
-                                 mask_transform=mask_transform,
-                                 image_ids=train_ids,
-                                 return_both=args.augmentation,
-                                 smoke5k=args.smoke5k, Rise=args.Rise)
+        # Create DataLoaders
+        train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
+        val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False)
+        test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
 
-    print(f"Total train samples: {len(train_dataset)}")
+        print(f"Train size: {len(train_subset)} |Test size: {len(val_subset)} |Test size: {len(test_subset)}")
+    else:
+        train_ids, val_ids, test_ids = split_dataset(args.json_path, args.image_folder)
 
-    # random_indices = random.sample(range(len(train_dataset)), 10)
+        print(f"Dataset split: Train={len(train_ids)}, Val={len(val_ids)}, Test={len(test_ids)}")
+        # Load dataset with transformations
+        # dataset = SmokeDataset(json_path, image_folder, transform=image_transform, mask_transform=mask_transform)
+        # dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
-    # # Visualize each
-    # for idx in random_indices:
-    #     show_image_mask(train_dataset, idx)
+        # Load dataset
+        train_dataset = SmokeDataset(args.json_path, args.image_folder,
+                                     args.smoke5k_path, args.Rise_path,
+                                     transform=image_transform,
+                                     mask_transform=mask_transform,
+                                     image_ids=train_ids,
+                                     return_both=args.augmentation,
+                                     smoke5k=args.smoke5k, Rise=args.Rise)
 
-    val_dataset = SmokeDataset(args.json_path, args.image_folder,
-                               args.smoke5k_path, args.Rise_path,
-                               transform=image_transform,
-                               mask_transform=mask_transform,
-                               image_ids=val_ids
-                               )
+        print(f"Total train samples: {len(train_dataset)}")
 
-    test_dataset = SmokeDataset(args.json_path, args.image_folder,
-                                args.smoke5k_path, args.Rise_path,
-                                transform=image_transform,
-                                mask_transform=mask_transform,
-                                image_ids=test_ids
+        # random_indices = random.sample(range(len(train_dataset)), 10)
+
+        # # Visualize each
+        # for idx in random_indices:
+        #     show_image_mask(train_dataset, idx)
+
+        val_dataset = SmokeDataset(args.json_path, args.image_folder,
+                                   args.smoke5k_path, args.Rise_path,
+                                   transform=image_transform,
+                                   mask_transform=mask_transform,
+                                   image_ids=val_ids
+                                   )
+
+        test_dataset = SmokeDataset(args.json_path, args.image_folder,
+                                    args.smoke5k_path, args.Rise_path,
+                                    transform=image_transform,
+                                    mask_transform=mask_transform,
+                                    image_ids=test_ids
+                                    )
+
+        original_samples = sum(1 for item in train_dataset.image_data if item['source'] == 'coco')
+        smoke5k_samples = sum(1 for item in train_dataset.image_data if item['source'] == 'smoke5k')
+
+        original_weight = 1.0
+        smoke5k_weight = original_samples / (smoke5k_samples + 1e-6)
+
+        weights = [
+            original_weight if item["source"] == "original" else smoke5k_weight
+            for item in train_dataset.image_data
+        ]
+
+        sampler = WeightedRandomSampler(
+            weights=weights,  # List of weights per sample
+            num_samples=len(train_dataset),  # Total samples per "epoch"
+            replacement=True  # re-sampling of minority classes
+        )
+
+        # Create DataLoaders
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=args.batch_size,
+                                  # shuffle=True
+                                  sampler=sampler
+                                  #  drop_last=True
+                                  )
+        print(f"Total train batches: {len(train_loader)}")
+
+        val_loader = DataLoader(val_dataset,
+                                batch_size=args.val_batch_size,
+                                shuffle=False
                                 )
 
-    original_samples = sum(1 for item in train_dataset.image_data if item['source'] == 'coco')
-    smoke5k_samples = sum(1 for item in train_dataset.image_data if item['source'] == 'smoke5k')
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=args.batch_size,
+                                 shuffle=False
+                                 )
 
-    original_weight = 1.0
-    smoke5k_weight = original_samples / (smoke5k_samples + 1e-6)
-
-    weights = [
-        original_weight if item["source"] == "original" else smoke5k_weight
-        for item in train_dataset.image_data
-    ]
-
-    sampler = WeightedRandomSampler(
-        weights=weights,  # List of weights per sample
-        num_samples=len(train_dataset),  # Total samples per "epoch"
-        replacement=True  # re-sampling of minority classes
-    )
-
-    # Create DataLoaders
-    train_loader = DataLoader(train_dataset,
-                              batch_size=args.batch_size,
-                              # shuffle=True
-                              sampler=sampler
-                              #  drop_last=True
-                              )
-    print(f"Total train batches: {len(train_loader)}")
-
-    val_loader = DataLoader(val_dataset,
-                            batch_size=args.val_batch_size,
-                            shuffle=False
-                            )
-
-    test_loader = DataLoader(test_dataset,
-                             batch_size=args.batch_size,
-                             shuffle=False
-                             )
-
-    # ---- Load DeepLabV3+ Model ----
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # ---- Model ----
 
     model = choose_backbone(args.backbone)
     model.to(device)
@@ -231,7 +276,7 @@ if __name__ == "__main__":
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,mode='max',patience=args.lr_patience)
 
     # ---- Training Loop ----
-    max_batches = 1
+    # max_batches = 1
     best_score = 0.0
     for epoch in range(1, (args.num_epochs + 1)):
         model.train()
@@ -239,14 +284,12 @@ if __name__ == "__main__":
         train_accuracy = 0.0
         train_iou = 0.0
 
-        for i, (images, masks, _, labels) in enumerate(train_loader):
-            if i >= max_batches:
-                break  # Stop after two batches
+        for i, (images, labels, _, masks) in enumerate(train_loader):
+            # if i >= max_batches:
+            #     break  # Stop after two batches
 
             images = images.to(device)
             masks = masks.to(device)
-
-
             # Reset gradients
             optimizer.zero_grad()
 
@@ -261,17 +304,15 @@ if __name__ == "__main__":
                     loss = criterion(outputs.squeeze(1), masks.squeeze(1))
             else:
                 outputs = model(images)
+                # masks_np = outputs.squeeze(1).detach().cpu().numpy()  # (B, H, W)
+                # first_mask = masks_np[0]
 
-                masks_np = outputs.squeeze(1).detach().cpu().numpy()  # (B, H, W)
-                first_mask = masks_np[0]
+                # mask_binary = (first_mask > 0.5).astype(np.uint8) * 255
 
-                mask_binary = (first_mask > 0.5).astype(np.uint8) * 255
-
-                plt.imshow(mask_binary, cmap="gray")  # Use 'viridis' for probabilistic view
-                plt.title("Segmentation Mask")
-                plt.axis("off")
-                plt.show()
-
+                # plt.imshow(mask_binary, cmap="gray")  # Use 'viridis' for probabilistic view
+                # plt.title("Segmentation Mask")
+                # plt.axis("off")
+                # plt.show()
                 if args.loss_type == 'dice':
                     num_masks = outputs.size(0)
                     # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
@@ -311,7 +352,7 @@ if __name__ == "__main__":
         val_iou = 0.0
 
         with torch.no_grad():
-            for i, (images, masks, _, labels) in enumerate(val_loader):
+            for i, (images, labels, _, masks) in enumerate(val_loader):
                 images, masks = images.to(device), masks.to(device)
                 outputs = model(images)
 
@@ -347,7 +388,7 @@ if __name__ == "__main__":
 
     save_path = os.path.join(
         os.path.dirname(args.save_model_path),
-        f"{args.backbone}_{os.path.basename(args.save_model_path)}"
+        f"{args.backbone}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
     )
     torch.save(model.state_dict(), save_path)
     print("Training complete!")
@@ -371,7 +412,7 @@ if __name__ == "__main__":
     test_f1_crf = 0.0
 
     with torch.no_grad():
-        for i, (images, masks, _, labels) in enumerate(test_loader):
+        for i, (images, labels, _, masks) in enumerate(test_loader):
             images = images.to(device)
             masks = masks.to(device)
 

@@ -137,16 +137,8 @@ def get_cam_for_image(image_tensor, model, target_layers, target_category=None):
     return cam_image, grayscale_cam, pred_class
 
 
-def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, num_samples_per_batch=5, max_batches=15):
-    """
-    Args:
-        dataloader: DataLoader object providing batches of images.
-        model: Trained model.
-        target_layers: Layers used for CAM visualization.
-        save_dir: Directory to save CAM images (optional).
-        num_samples_per_batch: Number of images to visualize per batch.
-        max_batches: Maximum number of batches to process (None = all batches).
-    """
+def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, num_samples_per_batch=3, max_batches=50):
+    print("Generating CAM for dataset...")
     device = next(model.parameters()).device
 
     if save_dir:
@@ -154,23 +146,22 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
 
     batch_count = 0
 
-    for batch_idx, (images, labels, image_id, mask) in enumerate(dataloader):
+    for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
         if max_batches is not None and batch_count >= max_batches:
             break  # Stop if max_batches limit is reached
 
         # Move images to the device
         images = images.to(device)
-        labels = labels.to(device)
-
         # Limit to num_samples_per_batch
         num_samples = min(num_samples_per_batch, len(images))
         images = images[:num_samples]
-        labels = labels[:num_samples]
+        masks = masks[:num_samples]
+        # Get model predictions
 
         # Prepare figure (4 columns now: Original, CAM, Grayscale CAM, Mask)
-        fig, axs = plt.subplots(num_samples, 4, figsize=(20, 5 * num_samples))
+        fig, axs = plt.subplots(num_samples, 2, figsize=(20, 5 * num_samples))
 
-        for i, (image, label) in enumerate(zip(images, labels)):
+        for i, (image, mask, label) in enumerate(zip(images, masks, labels)):
             image_tensor = image.unsqueeze(0)  # Add batch dimension
             cam_image, grayscale_cam, pred_class = get_cam_for_image(image_tensor, model, target_layers)
 
@@ -195,15 +186,15 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
             axs[i, 1].set_title(f"CAM (Pred: {pred_class})")
             axs[i, 1].axis('off')
 
-            # Plot grayscale CAM
-            axs[i, 2].imshow(grayscale_cam, cmap='gray')
-            axs[i, 2].set_title("Grayscale CAM")
-            axs[i, 2].axis('off')
+            # # Plot grayscale CAM
+            # axs[i, 2].imshow(grayscale_cam, cmap='gray')
+            # axs[i, 2].set_title("Grayscale CAM")
+            # axs[i, 2].axis('off')
 
-            # Plot ground truth mask
-            axs[i, 3].imshow(mask_np, cmap='gray')
-            axs[i, 3].set_title("Ground Truth Mask")
-            axs[i, 3].axis('off')
+            # # Plot ground truth mask
+            # axs[i, 3].imshow(mask_np, cmap='gray')
+            # axs[i, 3].set_title("Ground Truth Mask")
+            # axs[i, 3].axis('off')
 
         plt.tight_layout()
 
@@ -218,10 +209,6 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
 
 
 def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold):
-    """
-    Generate pseudo-labels from CAMs for a dataset using image IDs for filenames
-    """
-
     os.makedirs(save_dir, exist_ok=True)
     device = next(model.parameters()).device
     model.eval()  # Set model to evaluation mode
@@ -231,7 +218,13 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                   target_layers=target_layers,
                   reshape_transform=reshape_transform)
 
-    for batch_idx, (images, _, image_ids) in enumerate(dataloader):
+    iou_sum = 0.0
+    total_samples = 0
+
+    max_batch = 2
+    for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
+        if max_batch is not None and batch_idx >= max_batch:
+            break
         # Move entire batch to device
         images = images.to(device)
 
@@ -242,7 +235,7 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
             pred_classes = torch.argmax(outputs, dim=1)
 
         # Process each image in the batch
-        for img_idx, (image, pred_class, image_id) in enumerate(zip(images, pred_classes, image_ids)):
+        for img_idx, (image, pred_class, image_id, mask) in enumerate(zip(images, pred_classes, image_ids, masks)):
             # Generate CAM for predicted class
             targets = [ClassifierOutputTarget(pred_class)]
 
@@ -256,14 +249,56 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
             # Create binary mask
             pseudo_label = (grayscale_cam > threshold).astype(np.float32)
 
+            # Process mask
+            gt_mask = mask.squeeze().cpu().numpy()
+            gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
+            intersection = np.logical_and(gt_mask, pseudo_label).sum()
+            union = np.logical_or(gt_mask, pseudo_label).sum()
+            iou = intersection / (union + 1e-8)  # Avoid division by zero
+            iou_sum += iou
+            total_samples += 1
+
             if isinstance(image_id, torch.Tensor):
                 img_id = image_id.item()  # Convert tensor to Python scalar
             elif isinstance(image_id, str) and image_id.isdigit():
                 img_id = int(image_id)  # Convert string number to int
             else:
+
                 img_id = image_id
 
-                # Save pseudo-label
+            mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
+            std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
+
+            img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+            img_np = std * img_np + mean  # Denormalize
+            img_np = np.clip(img_np, 0, 1)
+            fig, ax = plt.subplots(1, 4, figsize=(20, 5))
+            # Original image
+
+            ax[0].imshow(img_np)
+            ax[0].set_title('Original Image')
+            ax[0].axis('off')
+
+            # CAM visualization
+            ax[1].imshow(grayscale_cam, cmap='jet')
+            ax[1].set_title('Class Activation Map')
+            ax[1].axis('off')
+
+            # Pseudo mask
+            ax[2].imshow(pseudo_label, cmap='gray')
+            ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
+            ax[2].axis('off')
+
+            # Ground truth mask
+            ax[3].imshow(gt_mask, cmap='gray')
+            ax[3].set_title('Ground Truth Mask')
+            ax[3].axis('off')
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
+            plt.close()
+
+            # Save pseudo-label
             cv2.imwrite(
                 os.path.join(save_dir, f"pseudo_label_{img_id}.png"),
                 (pseudo_label * 255).astype(np.uint8)
@@ -271,11 +306,12 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
 
             # Save CAM visualization
             heatmap = cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET)
-
             cv2.imwrite(
-                os.path.join(save_dir, f"cam_vis_{img_id}.png"),
+                os.path.join(save_dir, f"cam_{img_id}.png"),
                 heatmap
             )
 
+        print(f"Batch {batch_idx + 1}/{len(dataloader)} - Current Mean IoU: {iou_sum / total_samples:.4f}")
 
-
+    # Final statistics
+    print(f"\nFinal Mean IoU: {iou_sum / total_samples:.4f} (over {total_samples} samples)")

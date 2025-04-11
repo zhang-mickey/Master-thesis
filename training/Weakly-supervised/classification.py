@@ -10,9 +10,11 @@ import os, argparse
 import torch.nn.functional as F
 from torchvision import transforms, models
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import random_split
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 import time
+from matplotlib import pyplot as plt
 
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
@@ -22,6 +24,7 @@ sys.path.append(project_root)
 
 from lib.dataset.SmokeDataset import *
 from lib.dataset.WeaklyDataset import *
+from lib.dataset.cropDataset import *
 from lib.network.backbone import choose_backbone
 from lib.utils.splitdataset import *
 from lib.utils.transform import *
@@ -52,6 +55,7 @@ def parse_args():
     parser.add_argument("--save_model_path", type=str,
                         default=os.path.join(project_root, "model/model_classification.pth"),
                         help="Path to save the trained model")
+
     parser.add_argument("--save_pseudo_labels_path", type=str,
                         default=os.path.join(project_root, "result/pseudo_labels"),
                         help="Path to save the pseudo labels")
@@ -67,15 +71,26 @@ def parse_args():
     parser.add_argument("--Rise_path", type=str, default=os.path.join(project_root, "Rise/Strong_negative_frames/"),
                         help="path to Rise")
 
+    parser.add_argument("--crop_smoke_image_folder", type=str,
+                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/"),
+                        help="Path to the cropped smoke image dataset folder")
+
+    parser.add_argument("--crop_mask_folder", type=str,
+                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/"),
+                        help="Path to the cropped image dataset mask folder")
+
+    parser.add_argument("--crop_non_smoke_folder", type=str,
+                        default=os.path.join(project_root,
+                                             "smoke-segmentation.v5i.coco-segmentation/non_smoke_images/"),
+                        help="Path to the cropped image dataset mask folder")
+
+    parser.add_argument("--use_crop", type=bool, default=True, help="use cropped image or not")
+
     # train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
 
-    parser.add_argument("--CAM_type", type=str, default='GradCAM',
-                        choices=['grad', 'TransCAM', 'TsCAM'],
-                        help="loss type (default: False)")
-
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
-    parser.add_argument("--num_epochs", type=int, default=1, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
 
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -84,12 +99,22 @@ def parse_args():
 
     parser.add_argument("--weights_path", required=False, type=str)
 
-    parser.add_argument("--backbone", type=str, default="transformer",
+    # parser.add_argument("--CAM_type", type=str, default='GradCAM',
+    #                     choices=['grad', 'TransCAM', 'TsCAM'],
+    #                     help="CAM type")
+    # parser.add_argument("--backbone", type=str, default="transformer",
+    #                     help="choose backone")
+
+    parser.add_argument("--CAM_type", type=str, default='TransCAM',
+                        choices=['grad', 'TransCAM', 'TsCAM'],
+                        help="CAM type")
+
+    parser.add_argument("--backbone", type=str, default="conformer",
                         help="choose backone")
 
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
 
-    parser.add_argument('--threshold', default=0.3, type=float, help='Threshold for CAM')
+    parser.add_argument('--threshold', default=0.5, type=float, help='Threshold for CAM')
     return parser.parse_args()
 
 
@@ -115,50 +140,82 @@ if __name__ == "__main__":
     np.random.seed(args.manual_seed)
     random.seed(args.manual_seed)
 
-    train_ids, val_ids, test_ids = split_dataset(args.json_path, args.image_folder)
+    if args.use_crop:
+        train_dataset = CropDataset(
+            args.crop_smoke_image_folder,
+            args.crop_mask_folder,
+            args.crop_non_smoke_folder,
+            transform=image_transform,
+            mask_transform=mask_transform,
+            img_size=(args.crop_size, args.crop_size)
+        )
 
-    print(f"Smoke Dataset split: Train={len(train_ids)}, Val={len(val_ids)}, Test={len(test_ids)}")
+        total_size = len(train_dataset)
+        train_size = int(0.8 * total_size)
+        test_size = total_size - train_size
 
-    non_smoke_train, non_smoke_val, non_smoke_test = split_non_smoke_dataset(args.non_smoke_image_folder)
-    print(
-        f"Non-smoke Dataset split: Train={len(non_smoke_train)}, Val={len(non_smoke_val)}, Test={len(non_smoke_test)}")
+        # Split dataset
+        train_subset, test_subset = random_split(train_dataset, [train_size, test_size])
 
-    # Load smoke images and extract their masks.
-    train_smoke = SmokeDataset(
-        args.json_path,
-        args.image_folder,
-        args.smoke5k, args.Rise,
-        transform=image_transform, mask_transform=mask_transform,
-        image_ids=train_ids)
+        # Create DataLoaders
+        train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
+        test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
 
-    # Load non-smoke images.
-    # Select random smoke masks and paste them onto non-smoke images.
-    # Ensure realistic blending so that pasted smoke integrates well with the background.
-    # Return the modified images and their new mask labels.
-    # smoke_aug = SmokeCopyPaste(train_smoke, p=0.7)
+        print(f"Train size: {len(train_subset)} | Test size: {len(test_subset)}")
 
-    train_dataset = SmokeWeaklyDataset(args.json_path,
-                                       args.image_folder,
-                                       transform=image_transform,
-                                       mask_transform=mask_transform,
-                                       image_ids=train_ids,
-                                       non_smoke_image_folder=args.non_smoke_image_folder,
-                                       non_smoke_files=non_smoke_train,
-                                       smoke_dataset=train_smoke,
-                                       flag=True)
+        original_train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
 
-    # random_indices = random.sample(range(len(train_dataset)), 10)
+    #
+    #  resize
+    else:
+        train_ids, val_ids, test_ids = split_dataset(args.json_path, args.image_folder)
 
-    # # Visualize each
-    # for idx in random_indices:
-    #     show_image_mask_class(train_dataset, idx)
+        print(f"Smoke Dataset split: Train={len(train_ids)}, Val={len(val_ids)}, Test={len(test_ids)}")
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        non_smoke_train, non_smoke_val, non_smoke_test = split_non_smoke_dataset(args.non_smoke_image_folder)
 
-    original_train_loader = DataLoader(train_smoke, batch_size=args.batch_size, shuffle=True)
+        print(
+            f"Non-smoke Dataset split: Train={len(non_smoke_train)}, Val={len(non_smoke_val)}, Test={len(non_smoke_test)}")
 
-    # print(f"Training Dataset loaded: {len(train_dataset)} images in total")
-    print(f"Number of batches: {len(train_loader)}")
+        # Load smoke images and extract their masks.
+        train_smoke = SmokeDataset(
+            args.json_path,
+            args.image_folder,
+            args.smoke5k_path, args.Rise_path,
+            transform=image_transform,
+            mask_transform=mask_transform,
+            image_ids=train_ids)
+
+        # Load non-smoke images.
+        # Select random smoke masks and paste them onto non-smoke images.
+        # Ensure realistic blending so that pasted smoke integrates well with the background.
+        # Return the modified images and their new mask labels.
+        # smoke_aug = SmokeCopyPaste(train_smoke, p=0.7)
+
+        train_dataset = SmokeWeaklyDataset(args.json_path,
+                                           args.image_folder,
+                                           args.Rise_path,
+                                           transform=image_transform,
+                                           mask_transform=mask_transform,
+                                           image_ids=train_ids,
+                                           non_smoke_image_folder=args.non_smoke_image_folder,
+                                           non_smoke_files=non_smoke_train,
+                                           #    smoke_dataset=train_smoke,
+                                           flag=True
+                                           , Rise=args.Rise)
+
+        # random_indices = random.sample(range(len(train_dataset)), 10)
+
+        # # Visualize each
+        # for idx in random_indices:
+        #     show_image_mask_class(train_dataset, idx)
+
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+
+        original_train_loader = DataLoader(train_smoke, batch_size=args.batch_size, shuffle=True)
+
+        # print(f"Training Dataset loaded: {len(train_dataset)} images in total")
+        print(f"Number of batches: {len(train_loader)}")
 
     # val_dataset = SmokeWeaklyDataset(args.json_path, args.image_folder,
     #                                  transform=image_transform,
@@ -232,79 +289,80 @@ if __name__ == "__main__":
 
         save_path = os.path.join(
             os.path.dirname(args.save_model_path),
-            f"{args.backbone}_{os.path.basename(args.save_model_path)}"
+            f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
         )
         torch.save(model.state_dict(), save_path)
         print("Training complete! Model saved.")
 
-        # model.load_state_dict(torch.load(save_path))
-        # model.eval()
-        # model.cuda()
+        model.load_state_dict(torch.load(save_path))
+        model.eval()
+        model.cuda()
+
         # Test phase
-        # print("Starting test phase...")
-        # test_loss = 0.0
-        # test_accuracy = 0.0
-        # test_predictions = []
-        # test_ground_truth = []
+        print("Starting test phase...")
+        test_loss = 0.0
+        test_accuracy = 0.0
+        test_predictions = []
+        test_ground_truth = []
 
-        # with torch.no_grad():
-        #     for batch_idx, (images, labels, _, mask) in enumerate(test_loader):
-        #         images, labels = images.to(device), labels.float().to(device)
+        with torch.no_grad():
+            for batch_idx, (images, labels, _, mask) in enumerate(test_loader):
+                images, labels = images.to(device), labels.float().to(device)
 
-        #         outputs = model(images)
-        #         if isinstance(outputs, tuple):
-        #             outputs = outputs[0]
+                outputs = model(images)
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]
 
-        #         outputs = outputs.squeeze(1)
+                outputs = outputs.squeeze(1)
 
-        #         # Calculate loss and accuracy
-        #         loss = criterion(outputs, labels)
-        #         acc = calculate_accuracy(outputs, labels)
+                # Calculate loss and accuracy
+                loss = criterion(outputs, labels)
+                acc = calculate_accuracy(outputs, labels)
 
-        #         test_loss += loss.item()
-        #         test_accuracy += acc
+                test_loss += loss.item()
+                test_accuracy += acc
 
-        #         # Store predictions and ground truth for metrics calculation
-        #         predictions = (torch.sigmoid(outputs) > 0.5).float()
-        #         test_predictions.extend(predictions.cpu().numpy())
-        #         test_ground_truth.extend(labels.cpu().numpy())
+                # Store predictions and ground truth for metrics calculation
+                predictions = (torch.sigmoid(outputs) > 0.5).float()
+                test_predictions.extend(predictions.cpu().numpy())
+                test_ground_truth.extend(labels.cpu().numpy())
 
-        #         if (batch_idx + 1) % 5 == 0:
-        #             print(
-        #                 f"Test Batch [{batch_idx + 1}/{len(test_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.2f}%")
+                if (batch_idx + 1) % 5 == 0:
+                    print(
+                        f"Test Batch [{batch_idx + 1}/{len(test_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.2f}%")
 
-        # # Calculate average metrics
-        # avg_test_loss = test_loss / len(test_loader)
-        # avg_test_accuracy = test_accuracy / len(test_loader)
-        # Calculate additional metrics
+        # Calculate average metrics
+        avg_test_loss = test_loss / len(test_loader)
+        avg_test_accuracy = test_accuracy / len(test_loader)
 
         # precision = precision_score(test_ground_truth, test_predictions, zero_division=0)
         # recall = recall_score(test_ground_truth, test_predictions, zero_division=0)
-        # f1 = f1_score(test_ground_truth, test_predictions, zero_division=0)
+        f1 = f1_score(test_ground_truth, test_predictions, zero_division=0)
         # conf_matrix = confusion_matrix(test_ground_truth, test_predictions)
 
-        # print("\n===== Test Results =====")
-        # print(f"Average Loss: {avg_test_loss:.4f}")
-        # print(f"Accuracy: {avg_test_accuracy:.2f}%")
+        print("\n===== Test Results =====")
+        print(f"Average Loss: {avg_test_loss:.4f}")
+        print(f"Accuracy: {avg_test_accuracy:.2f}%")
         # print(f"Precision: {precision:.4f}")
         # print(f"Recall: {recall:.4f}")
-        # print(f"F1 Score: {f1:.4f}")
+        print(f"F1 Score: {f1:.4f}")
         # print(f"Confusion Matrix:\n{conf_matrix}")
+
         # Determine target layers for CAM
-        # if args.backbone == "resnet101":
-        #     target_layers = [model.layer4[-1]]  # Last layer of layer4
-        # elif args.backbone == "transformer":
-        #     target_layers = [model.blocks[-1].norm1]  # Last transformer block
-        # else:
+        if args.backbone == "resnet101":
+            target_layers = [model.layer4[-1]]  # Last layer of layer4
+        elif args.backbone == "transformer":
+            target_layers = [model.blocks[-1].norm1]  # Last transformer block
+        else:
 
-        #     target_layers = [list(model.children())[-3]]  # Example fallback
+            target_layers = [list(model.children())[-3]]  # Example fallback
 
-        # generate_cam_for_dataset(
-        #     dataloader=original_train_loader,
-        #     model=model,
-        #     target_layers=target_layers,
-        #     save_dir=args.save_cam_path,
-        # )
+        generate_cam_for_dataset(
+            dataloader=train_loader,
+            model=model,
+            target_layers=target_layers,
+            save_dir=args.save_cam_path,
+        )
 
         # Generate pseudo-labels
         # generate_pseudo_labels(
@@ -322,7 +380,8 @@ if __name__ == "__main__":
 
             for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
                 images, labels = images.to(device), labels.float().to(device)
-                logits_conv, logit_trans, cams = model(images)
+
+                logits_conv, logit_trans, cams = model(args.CAM_type, images)
                 # Combine both logits for final prediction
                 combined_logits = logits_conv + logit_trans
 
@@ -334,13 +393,15 @@ if __name__ == "__main__":
                 acc = calculate_accuracy(combined_logits, labels)
                 avg_meter.add({'loss': loss.item(), 'accuracy': acc})
 
-                if (batch_idx + 1) % 10 == 0:
-                    print(f"Epoch [{epoch}/{args.num_epochs}] Batch [{batch_idx + 1}/{len(train_loader)}], "
-                          f"Loss: {loss.item():.4f}, Acc: {acc:.2f}%")
+                # if (batch_idx + 1) % 10 == 0:
+                #     print(f"Epoch [{epoch}/{args.num_epochs}] Batch [{batch_idx + 1}/{len(train_loader)}], "
+                #           f"Loss: {loss.item():.4f}, Acc: {acc:.2f}%")
 
+            avg_loss, avg_acc = avg_meter.get('loss', 'accuracy')
+            print(f"Epoch [{epoch}/{args.num_epochs}], Avg Loss: {avg_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%")
         save_path = os.path.join(
             os.path.dirname(args.save_model_path),
-            f"{args.backbone}_{os.path.basename(args.save_model_path)}"
+            f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
         )
         torch.save(model.state_dict(), save_path)
         print("Training complete! Model saved.")
@@ -351,34 +412,102 @@ if __name__ == "__main__":
 
         for batch_idx, (images, masks, image_ids, labels) in enumerate(original_train_loader):
             # (batchsize,channel,height,width)
-            images = images.to(device)
+            images = images.to(device)  # [B, num_classes]
+
             masks = masks.to(device)
 
-            cam_list = []
-            orig_img_size = images.shape[:2]
+            # cam_list=[]
+            orig_img_size = images.shape[2:]
+            iou_sum = 0.0
+            total_samples = 0
             with torch.no_grad():
-                for i, (img, label) in enumerate(zip(images, labels)):
-                    logits_conv, logit_trans, cams = model(img)
+                for i, (img, label, img_id) in enumerate(zip(images, labels, image_ids)):
+                    img = img.unsqueeze(0)  # [1, C, H, W]
 
-                    cam = F.interpolate(cam[:, 1:, :, :], orig_img_size, mode='bilinear', align_corners=False)[0]
-                    cam = cam.cpu().numpy() * label.clone().view(1, 1, 1).numpy()
-                    cam_list.append(cam)
+                    # cam: [1, num_classes, H', W']
+                    logits_conv, logit_trans, cam = model(args.CAM_type, img)
 
-            # multi-scale
-            sum_cam = np.sum(cam_list, axis=0)
-            sum_cam[sum_cam < 0] = 0
-            cam_max = np.max(sum_cam, (1, 2), keepdims=True)
-            cam_min = np.min(sum_cam, (1, 2), keepdims=True)
-            sum_cam[sum_cam < cam_min + 1e-5] = 0
-            norm_cam = (sum_cam - cam_min) / (cam_max - cam_min + 1e-5)
+                    # Remove background channel if your model outputs it
+                    cam = F.interpolate(cam, size=orig_img_size,
+                                        mode='bilinear', align_corners=False)[0]  # [C, H, W]
 
-            cam_dict = {}
-            for i in range(1):
-                if label[i] > 1e-5:
-                    cam_dict[i] = norm_cam[i]
+                    cam = cam[0]  # [H, W]
+                    cam = cam.cpu().numpy()
 
-            if args.save_cam_path is not None:
-                np.save(os.path.join(args.save_cam_path, f"cams_{batch_idx}.npy"), cam_dict)
+                    mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
+                    std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
+
+                    img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+                    img_np = std * img_np + mean  # Denormalize
+                    img_np = np.clip(img_np, 0, 1)
+
+                    pseudo_label = (cam > args.threshold).astype(np.float32)
+                    # cam_list.append(cam)
+                    gt_mask = mask.squeeze().cpu().numpy()
+                    gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
+
+                    intersection = np.logical_and(gt_mask, pseudo_label).sum()
+                    union = np.logical_or(gt_mask, pseudo_label).sum()
+                    iou = intersection / (union + 1e-8)  # Avoid division by zero
+                    iou_sum += iou
+                    total_samples += 1
+                    fig, ax = plt.subplots(1, 4, figsize=(20, 5))
+
+                    ax[0].imshow(img_np)
+                    ax[0].set_title('Original Image')
+                    ax[0].axis('off')
+
+                    # CAM visualization
+                    ax[1].imshow(cam, cmap='jet')
+                    ax[1].set_title('Class Activation Map')
+                    ax[1].axis('off')
+
+                    # Pseudo mask
+                    ax[2].imshow(pseudo_label, cmap='gray')
+                    ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
+                    ax[2].axis('off')
+
+                    # Ground truth mask
+                    ax[3].imshow(gt_mask, cmap='gray')
+                    ax[3].set_title('Ground Truth Mask')
+                    ax[3].axis('off')
+
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
+                    plt.close()
+
+                    cv2.imwrite(
+                        os.path.join(args.save_pseudo_labels_path, f"pseudo_label_{img_id}.png"),
+                        (pseudo_label * 255).astype(np.uint8)
+                    )
+
+                    heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+
+                    cv2.imwrite(
+                        os.path.join(args.save_cam_path, f"cam_vis_{img_id}.png"),
+                        heatmap
+                    )
+
+            print(f"Batch {batch_idx + 1}/{len(dataloader)} - Current Mean IoU: {iou_sum / total_samples:.4f}")
+
+    # Final statistics
+    print(f"\nFinal Mean IoU: {iou_sum / total_samples:.4f} (over {total_samples} samples)")
+
+    # multi-scale
+    # sum_cam=np.sum(cam_list,axis=0)
+    # sum_cam[sum_cam<0]=0
+    # cam_max=np.max(sum_cam,(1,2),keepdims=True)
+    # cam_min=np.min(sum_cam,(1,2),keepdims=True)
+    # sum_cam[sum_cam<cam_min+1e-5]=0
+    # norm_cam=(sum_cam-cam_min)/(cam_max-cam_min+1e-5)
+
+    # cam_dict={}
+    # for i in range(1):
+    #     if label[i]>1e-5:
+    #         cam_dict[i]=norm_cam[i]
+
+    # if args.save_cam_path is not None:
+    #     np.save(os.path.join(args.save_cam_path, f"cams_{batch_idx}.npy"), cam_dict)
 
 
 
