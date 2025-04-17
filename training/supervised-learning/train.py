@@ -30,7 +30,7 @@ from lib.network import *
 from lib.loss.loss import *
 from inference.inference import *
 from lib.utils.metrics import *
-from lib.utils.CRF import apply_crf
+from lib.utils.CRF import *
 from lib.utils.image_mask_visualize import *
 
 
@@ -95,7 +95,7 @@ def parse_args():
     parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
     parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
-    parser.add_argument("--num_epochs", type=int, default=50, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=1, help="epoch number")
     parser.add_argument("--lr", type=float, default=0.05, help="initial learning rate")
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -107,8 +107,11 @@ def parse_args():
     # parser.add_argument("--backbone", type=str, default="deeplabv3plus_Xception",
     # help="choose backone")
 
-    parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet101",
+    parser.add_argument("--backbone", type=str, default="SERT",
                         help="choose backone")
+
+    # parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet101",
+    #      help="choose backone")
 
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -148,6 +151,7 @@ if __name__ == "__main__":
 
     # Split dataset
     if args.use_crop:
+
         train_dataset = CropDataset(
             args.crop_smoke_image_folder,
             args.crop_mask_folder,
@@ -428,39 +432,37 @@ if __name__ == "__main__":
                 loss = criterion(outputs.squeeze(1), masks.squeeze(1))
             # Calculate metrics
             test_loss += loss.item()
-            # test_accuracy += calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
+            test_accuracy += calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
             test_iou += calculate_iou(outputs.squeeze(1), masks.squeeze(1))
 
             # Additional metrics
             test_dice += calculate_dice(outputs.squeeze(1), masks.squeeze(1))
             test_f1 += calculate_f1(outputs.squeeze(1), masks.squeeze(1))
 
-            # # Apply CRF post-processing
-            # for j in range(images.size(0)):
-            #     # Get original image and convert to numpy
-            #     orig_img = images[j].cpu().numpy().transpose(1, 2, 0)
-            #     # Denormalize the image if needed
-            #     mean = np.array([0.485, 0.456, 0.406])
-            #     std = np.array([0.229, 0.224, 0.225])
-            #     orig_img = std * orig_img + mean
-            #     orig_img = np.clip(orig_img, 0, 1) * 255.0
-            #     orig_img = orig_img.astype(np.uint8)
+            # Apply CRF post-processing
+            # CRF function processes individual images
+            batch_size = images.size(0)
+            for j in range(batch_size):
+                image_j = img_denorm(images[j].cpu().numpy()).astype(np.uint8)
 
-            #     # Get probability map
-            #     prob_map = torch.sigmoid(outputs[j, 0]).cpu().numpy()
+                mask_j = masks[j].cpu().numpy()
 
-            #     # Apply CRF
-            #     refined_mask = apply_crf(orig_img, prob_map)
+                # outputs_j = outputs[j].cpu().numpy()
+                outputs_j = torch.softmax(outputs[j], dim=0).cpu().numpy()
 
-            #     # Convert to tensor and move to device
-            #     refined_mask_tensor = torch.from_numpy(refined_mask).float().to(device)
+                crf_outputs = dense_crf(outputs_j, image_j, n_classes=1)
+                # Convert CRF output to tensor and move to device
+                crf_mask = np.argmax(crf_outputs, axis=0)  # (H, W)
+                refined_mask_tensor = torch.from_numpy(crf_mask).to(device)
 
-            #     # Calculate metrics with CRF
-            #     mask_j = masks[j, 0]
-            #     test_accuracy_crf += calculate_accuracy(refined_mask_tensor, mask_j)
-            #     test_iou_crf += calculate_iou(refined_mask_tensor, mask_j)
-            # test_dice_crf += calculate_dice(refined_mask_tensor, mask_j)
-            # test_f1_crf += calculate_f1(refined_mask_tensor, mask_j)
+                # Get corresponding ground truth mask
+                mask_j = masks[j].squeeze().long()
+
+                # Update CRF metrics
+                test_accuracy_crf += calculate_accuracy(refined_mask_tensor.unsqueeze(0), mask_j.unsqueeze(0))
+                test_iou_crf += calculate_iou(refined_mask_tensor.unsqueeze(0), mask_j.unsqueeze(0))
+                test_dice_crf += calculate_dice(refined_mask_tensor.unsqueeze(0), mask_j.unsqueeze(0))
+                test_f1_crf += calculate_f1(refined_mask_tensor.unsqueeze(0), mask_j.unsqueeze(0))
 
     # Calculate averages
     avg_test_loss = test_loss / len(test_loader)
@@ -470,16 +472,16 @@ if __name__ == "__main__":
     avg_test_f1 = test_f1 / len(test_loader)
 
     # Calculate CRF averages
-    # avg_test_acc_crf = test_accuracy_crf /len(test_dataset)
-    # avg_test_iou_crf = test_iou_crf /len(test_dataset)
-    # avg_test_dice_crf = test_dice_crf / len(test_dataset)
-    # avg_test_f1_crf = test_f1_crf /len(test_dataset)
+    avg_test_acc_crf = test_accuracy_crf / len(test_loader)
+    avg_test_iou_crf = test_iou_crf / len(test_loader)
+    avg_test_dice_crf = test_dice_crf / len(test_loader)
+    avg_test_f1_crf = test_f1_crf / len(test_loader)
 
     print("\nTest Results:")
     print(f"Loss: {avg_test_loss:.4f} | mIoU: {avg_test_iou:.4f}")
     print(f"Dice: {avg_test_dice:.4f} | F1: {avg_test_f1:.4f}")
 
-    # print("\nTest Results with CRF:")
-    # print(f"Acc: {avg_test_acc_crf:.4f} | mIoU: {avg_test_iou_crf:.4f}")
-    # print(f"Dice: {avg_test_dice_crf:.4f} | F1: {avg_test_f1_crf:.4f}")
+    print("\nTest Results with CRF:")
+    print(f"Acc: {avg_test_acc_crf:.4f} | mIoU: {avg_test_iou_crf:.4f}")
+    print(f"Dice: {avg_test_dice_crf:.4f} | F1: {avg_test_f1_crf:.4f}")
     print("Testing complete!")
