@@ -62,6 +62,9 @@ def parse_args():
 
     parser.add_argument("--save_cam_path", type=str, default=os.path.join(project_root, "result/cam"),
                         help="Path to save the cam")
+    parser.add_argument("--save_visualization_path", type=str,
+                        default=os.path.join(project_root, "result/visualization"),
+                        help="Path to save the cam")
 
     parser.add_argument("--smoke5k", type=bool, default=False, help="use smoke5k or not")
     parser.add_argument("--smoke5k_path", type=str, default=os.path.join(project_root, "SMOKE5K/train/"),
@@ -90,7 +93,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
 
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
-    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
+
+    parser.add_argument("--num_epochs", type=int, default=1, help="epoch number")
 
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -99,22 +103,25 @@ def parse_args():
 
     parser.add_argument("--weights_path", required=False, type=str)
 
-    # parser.add_argument("--CAM_type", type=str, default='GradCAM',
-    #                     choices=['grad', 'TransCAM', 'TsCAM'],
-    #                     help="CAM type")
+    parser.add_argument("--CAM_type", type=str, default='GradCAM',
+                        choices=['grad', 'TransCAM', 'TsCAM'],
+                        help="CAM type")
     # parser.add_argument("--backbone", type=str, default="transformer",
     #                     help="choose backone")
 
-    parser.add_argument("--CAM_type", type=str, default='TransCAM',
-                        choices=['grad', 'TransCAM', 'TsCAM'],
-                        help="CAM type")
+    # parser.add_argument("--CAM_type", type=str, default='TransCAM',
+    #                     choices=['grad', 'TransCAM', 'TsCAM'],
+    #                     help="CAM type")
 
-    parser.add_argument("--backbone", type=str, default="conformer",
+    # parser.add_argument("--backbone", type=str, default="conformer",
+    #                     help="choose backone")
+
+    parser.add_argument("--backbone", type=str, default="resnet38d",
                         help="choose backone")
 
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
 
-    parser.add_argument('--threshold', default=0.5, type=float, help='Threshold for CAM')
+    parser.add_argument('--threshold', default=0.3, type=float, help='Threshold for CAM')
     return parser.parse_args()
 
 
@@ -238,7 +245,7 @@ if __name__ == "__main__":
 
     model = choose_backbone(args.backbone)
     model = model.to(device)
-
+    model.train()
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
@@ -246,8 +253,141 @@ if __name__ == "__main__":
     avg_meter = AverageMeter('loss', 'accuracy')
     # max_batches = 2
 
-    if args.CAM_type == 'GradCAM':
-        model.train()
+    if args.backbone == 'resnet38d':
+        for epoch in range(1, (args.num_epochs + 1)):
+            avg_meter.pop()
+            data_load_start = time.time()
+            for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
+                # if batch_idx >= max_batches:
+                #     break  # Stop after two batches
+                images, labels = images.to(device), labels.float().to(device)
+                mask = mask.to(device)
+                optimizer.zero_grad()
+                outputs = model(images)
+                outputs = outputs.squeeze(1)
+                acc = calculate_accuracy(outputs, labels)
+
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                # Update AverageMeter with loss and accuracy
+                avg_meter.add({'loss': loss.item(), 'accuracy': acc})
+                if batch_idx % 10 == 0:
+                    print(
+                        f"Epoch [{epoch}/{args.num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.4f}")
+            scheduler.step()
+            avg_loss, avg_acc = avg_meter.get('loss', 'accuracy')
+            print(f"Epoch [{epoch}/{args.num_epochs}], Loss: {avg_loss:.4f}, Accuracy: {avg_acc:.4f}")
+        save_path = os.path.join(
+            os.path.dirname(args.save_model_path),
+            f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
+        )
+        torch.save(model.state_dict(), save_path)
+        print("Training complete! Model saved.")
+
+        model.load_state_dict(torch.load(save_path))
+        model.eval()
+        model.cuda()
+
+        # infer phase
+        print("Starting test phase...")
+        test_loss = 0.0
+        test_accuracy = 0.0
+        test_predictions = []
+        test_ground_truth = []
+        for batch_idx, (images, labels, image_ids, masks) in enumerate(train_loader):
+            # (batchsize,channel,height,width)
+            images = images.to(device)  # [B, num_classes]
+
+            masks = masks.to(device)
+
+            # cam_list=[]
+            orig_img_size = images.shape[2:]
+            iou_sum = 0.0
+            total_samples = 0
+
+            with torch.no_grad():
+                for i, (img, label, img_id, mask) in enumerate(zip(images, labels, image_ids, masks)):
+                    image = img
+
+                    cams = model.forward_cam(images)
+                    cam = F.interpolate(cams, size=orig_img_size,
+                                        mode='bilinear', align_corners=False)[0]  # [C, H, W]
+
+                    cam = cam[0]  # [H, W]
+                    cam = cam.cpu().numpy()
+
+                    mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
+                    std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
+
+                    img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+                    img_np = std * img_np + mean  # Denormalize
+                    img_np = np.clip(img_np, 0, 1)
+
+                    pseudo_label = (cam > args.threshold).astype(np.float32)
+                    # cam_list.append(cam)
+                    gt_mask = mask.squeeze().cpu().numpy()
+                    gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
+
+                    intersection = np.logical_and(gt_mask, pseudo_label).sum()
+                    union = np.logical_or(gt_mask, pseudo_label).sum()
+                    iou = intersection / (union + 1e-8)  # Avoid division by zero
+                    iou_sum += iou
+                    total_samples += 1
+                    fig, ax = plt.subplots(1, 4, figsize=(20, 5))
+
+                    ax[0].imshow(img_np)
+                    ax[0].set_title('Original Image')
+                    ax[0].axis('off')
+
+                    # CAM visualization
+                    ax[1].imshow(cam, cmap='jet')
+                    ax[1].set_title('Class Activation Map')
+                    ax[1].axis('off')
+
+                    # Pseudo mask
+                    ax[2].imshow(pseudo_label, cmap='gray')
+                    ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
+                    ax[2].axis('off')
+
+                    # Ground truth mask
+                    ax[3].imshow(gt_mask, cmap='gray')
+                    ax[3].set_title('Ground Truth Mask')
+                    ax[3].axis('off')
+
+                    save_dir = os.path.join(args.save_visualization_path, args.backbone)
+                    os.makedirs(save_dir, exist_ok=True)
+
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
+                    plt.close()
+
+                    pseudo_label_dir = os.path.join(args.save_pseudo_labels_path, args.backbone)
+                    os.makedirs(pseudo_label_dir, exist_ok=True)
+
+                    cv2.imwrite(
+                        os.path.join(pseudo_label_dir, f"pseudo_label_{img_id}.png"),
+                        (pseudo_label * 255).astype(np.uint8)
+                    )
+
+                    heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+                    cam_dir = os.path.join(args.save_cam_path, args.backbone)
+                    os.makedirs(cam_dir, exist_ok=True)
+
+                    cv2.imwrite(
+                        os.path.join(cam_dir, f"cam_vis_{img_id}.png"),
+                        heatmap
+                    )
+
+                # print(f"Batch {batch_idx+1}/{len()} - Current Mean IoU: {iou_sum/total_samples:.4f}")
+
+        # Final statistics
+        print(f"\nFinal Mean IoU: {iou_sum / total_samples:.4f} (over {total_samples} samples)")
+
+
+
+
+    elif args.backbone == 'transformer':
         for epoch in range(1, (args.num_epochs + 1)):
 
             avg_meter.pop()
@@ -357,11 +497,16 @@ if __name__ == "__main__":
 
             target_layers = [list(model.children())[-3]]  # Example fallback
 
+        save_cam_path = os.path.join(
+            os.path.dirname(args.save_cam_path),
+            f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}"
+        )
+
         generate_cam_for_dataset(
             dataloader=train_loader,
             model=model,
             target_layers=target_layers,
-            save_dir=args.save_cam_path,
+            save_dir=save_cam_path,
         )
 
         # Generate pseudo-labels
@@ -374,8 +519,6 @@ if __name__ == "__main__":
         # )
 
     elif args.CAM_type == 'TransCAM':
-        model.train()
-
         for epoch in range(1, (args.num_epochs + 1)):
 
             for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
@@ -421,8 +564,8 @@ if __name__ == "__main__":
             iou_sum = 0.0
             total_samples = 0
             with torch.no_grad():
-                for i, (img, label, img_id) in enumerate(zip(images, labels, image_ids)):
-                    img = img.unsqueeze(0)  # [1, C, H, W]
+                for i, (img, label, img_id, mask) in enumerate(zip(images, labels, image_ids, masks)):
+                    image = img.unsqueeze(0)  # [1, C, H, W]
 
                     # cam: [1, num_classes, H', W']
                     logits_conv, logit_trans, cam = model(args.CAM_type, img)
@@ -488,7 +631,7 @@ if __name__ == "__main__":
                         heatmap
                     )
 
-            print(f"Batch {batch_idx + 1}/{len(dataloader)} - Current Mean IoU: {iou_sum / total_samples:.4f}")
+            # print(f"Batch {batch_idx + 1}/{len()} - Current Mean IoU: {iou_sum / total_samples:.4f}")
 
     # Final statistics
     print(f"\nFinal Mean IoU: {iou_sum / total_samples:.4f} (over {total_samples} samples)")
@@ -508,10 +651,3 @@ if __name__ == "__main__":
 
     # if args.save_cam_path is not None:
     #     np.save(os.path.join(args.save_cam_path, f"cams_{batch_idx}.npy"), cam_dict)
-
-
-
-
-
-
-
