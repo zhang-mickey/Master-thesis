@@ -1,3 +1,4 @@
+from turtle import forward
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -121,12 +122,17 @@ def parse_args():
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
 
     parser.add_argument('--threshold', default=0.3, type=float, help='Threshold for CAM')
+
+    parser.add_argument('--logt', default=1, type=int,
+                        help='ite')
+
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     print("Starting training AffinityNet...")
     args = parse_args()
+
     print(vars(args))
 
     print(torch.cuda.is_available())
@@ -142,6 +148,7 @@ if __name__ == "__main__":
     train_dataset = PseudocamDataset(
         args.crop_smoke_image_folder,
         args.save_cam_path,
+        args.crop_mask_folder,
         transform=image_transform,
         mask_transform=mask_transform,
         affinity=True
@@ -177,83 +184,169 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
 
-    avg_meter = AverageMeter('loss', 'bg_loss', 'fg_loss', 'neg_loss')
+    avg_meter = AverageMeter('loss')
     # max_batches = 2
     # 512//8
     aff_label_extractor = ExtractAffinityLabelInRadius(cropsize=32, radius=5)
 
     if args.backbone == 'AffinityNet':
-        for epoch in range(1, (args.num_epochs + 1)):
-            avg_meter.pop()
-
-            for batch_idx, (images, labels, _, cams, masks) in enumerate(train_loader):
-                # if batch_idx >= max_batches:
-                #     break  # Stop after two batches
-                images, labels = images.to(device), labels.float().to(device)
-
-                cam = cams.to(device)
-                loss_total = 0
-
-                for i in range(images.size(0)):
-                    img = images[i].unsqueeze(0)  # (1, C, H, W)
-                    cam_np = cams[i].cpu().numpy()  # (H, W)
-                    # print("cam_np shape",cam_np.shape)#cam_np shape (512, 512)
-
-                    # cam_np: (512, 512)
-                    cam_tensor = torch.from_numpy(cam_np).unsqueeze(0)  # Shape: (1, 1, 512, 512)
-
-                    # Downsample to (64, 64)
-                    cam_downsampled = F.interpolate(cam_tensor, size=(32, 32), mode='bilinear', align_corners=False)
-
-                    # Back to NumPy
-                    cam_np_down = cam_downsampled.squeeze(0).squeeze(0).cpu().numpy()  # Shape: (64, 64)
-
-                    pseudo_label = np.zeros_like(cam_np_down, dtype=np.uint8)
-                    pseudo_label[(cam_np_down < 0.3) & (cam_np_down >= 0.05)] = 255  # ignore low confidence
-                    pseudo_label[cam_np_down >= 0.3] = 1  # foreground
-
-                    pred_aff = model(img)
-
-                    # Extract affinity labels
-                    bg_label, fg_label, neg_label = aff_label_extractor(pseudo_label)
-                    bg_label = bg_label.to(device)
-                    fg_label = fg_label.to(device)
-                    neg_label = neg_label.to(device)
-
-                    bg_count = torch.sum(bg_label) + 1e-5
-                    fg_count = torch.sum(fg_label) + 1e-5
-                    neg_count = torch.sum(neg_label) + 1e-5
-
-                    loss_bg = torch.sum(-bg_label * torch.log(pred_aff + 1e-5)) / bg_count
-                    loss_fg = torch.sum(-fg_label * torch.log(pred_aff + 1e-5)) / fg_count
-                    loss_neg = torch.sum(-neg_label * torch.log(1 - pred_aff + 1e-5)) / neg_count
-
-                    loss = loss_bg / 4 + loss_fg / 4 + loss_neg / 2
-                    loss_total += loss
-
-                loss_total = loss_total / images.size(0)
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                # Update AverageMeter with loss and accuracy
-                avg_meter.add({
-                    'loss': loss.item(),
-                    'bg_loss': loss_bg.item(),
-                    'fg_loss': loss_fg.item(),
-                    'neg_loss': loss_neg.item()
-
-                })
-
-            scheduler.step()
-            avg_loss = avg_meter.get('loss')
-            print(f"Epoch [{epoch}/{args.num_epochs}], Loss: {avg_loss:.4f}")
-
         save_path = os.path.join(
             os.path.dirname(args.save_model_path),
             f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
         )
-        torch.save(model.state_dict(), save_path)
-        print("Training complete! Model saved.")
+        model.load_state_dict(torch.load(save_path))
+        model.eval()
+        model.cuda()
+
+        iou_cam_sum = 0.0
+        iou_aff_sum = 0.0
+        total_samples = 0
+
+        for batch_idx, (images, labels, image_ids, cams, masks) in enumerate(train_loader):
+            #     #(batchsize,channel,height,width)
+            # img=images
+            # padded_size = (int(np.ceil(img.shape[2]/8)*8), int(np.ceil(img.shape[3]/8)*8))
+
+            # p2d = (0, padded_size[1] - img.shape[3], 0, padded_size[0] - img.shape[2])
+            # img = F.pad(img, p2d)
+
+            orig_img_size = images.shape[2:]
+
+            with torch.no_grad():
+                for i, (img, label, img_id, cam, mask) in enumerate(zip(images, labels, image_ids, cams, masks)):
+                    # cam torch.Size([1, 512, 512])
+                    cam_np = cam.cpu().numpy()
+
+                    print(f"CAM np min: {cam_np.min()}, max: {cam_np.max()}, mean: {cam_np.mean()}")
+
+                    cam_np = (cam_np - cam_np.min()) / (cam_np.max() - cam_np.min() + 1e-8)
+
+                    print(f"CAM normalize min: {cam_np.min()}, max: {cam_np.max()}, mean: {cam_np.mean()}")
+
+                    pseudo_label_cam = np.zeros_like(cam_np, dtype=np.uint8)
+                    pseudo_label_cam[cam_np >= 0.3] = 1
+
+                    cam_tensor = torch.from_numpy(cam_np).unsqueeze(0)  # Shape: (1, 1, 512, 512)
+
+                    cam_downsampled = F.interpolate(cam_tensor, size=(32, 32), mode='bilinear', align_corners=False)
+
+                    cam_np_down = cam_downsampled.squeeze(0).squeeze(0).cpu().numpy()  # Shape: (64, 64)
+
+                    affinity_matrix = torch.pow(model.forward(img.unsqueeze(0).cuda(), True), 8)
+
+                    # print(f"affinity_matrix shape: {affinity_matrix.shape}")
+                    # affinity_matrix shape: torch.Size([1, 34, 672])
+
+                    trans_matrix = affinity_matrix / torch.sum(affinity_matrix, dim=0, keepdim=True)
+                    # print(f"trans_matrix shape: {trans_matrix.shape}")
+
+                    for _ in range(args.logt):
+                        trans_matrix = torch.matmul(trans_matrix, trans_matrix)
+
+                    cam_tensor_down = torch.from_numpy(cam_np_down).float().to(device)  # [32, 32]
+
+                    cam_vec = cam_tensor_down.view(1, -1)  # [1, 1024]
+
+                    # Perform propagation
+                    refined_cam_vec = torch.matmul(cam_vec, trans_matrix)  # shape: (1, 1024)
+                    refined_cam = refined_cam_vec.view(1, 1, 32, 32)
+
+                    refined_cam_up = F.interpolate(refined_cam, size=(512, 512), mode='bilinear', align_corners=False)
+
+                    refined_np = refined_cam_up.squeeze().cpu().numpy()
+                    refined_np = refined_np - np.min(refined_np)
+                    refined_np = refined_np / (np.max(refined_np) + 1e-5)
+
+                    pseudo_label_aff = np.zeros_like(refined_np, dtype=np.uint8)
+                    pseudo_label_aff[refined_np >= args.threshold] = 1
+
+                    # Visualization
+
+                    mean = np.array([0.485, 0.456, 0.406])
+                    std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
+
+                    img_np = img.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+                    img_np = std * img_np + mean  # Denormalize
+                    img_np = np.clip(img_np, 0, 1)
+
+                    # pseudo_label = (cam > args.threshold).astype(np.float32)
+                    # pseudo_label = pseudo_label.detach().cpu().numpy()
+
+                    if isinstance(pseudo_label_aff, torch.Tensor):
+                        # For PyTorch tensor
+                        pseudo_label_aff = (pseudo_label_aff > args.threshold).float()
+                    else:
+                        # For NumPy array
+                        pseudo_label_aff = (pseudo_label_aff > args.threshold).astype(np.float32)
+
+                    # print("type pf pseudo-label",type(pseudo_label))
+                    # type pf pseudo-label <class 'torch.Tensor'>
+                    gt_mask = mask.squeeze().cpu().numpy()
+                    gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
+
+                    intersection_aff = np.logical_and(gt_mask, pseudo_label_aff).sum()
+                    union_aff = np.logical_or(gt_mask, pseudo_label_aff).sum()
+                    iou_aff = intersection_aff / (union_aff + 1e-8)  # Avoid division by zero
+
+                    intersection = np.logical_and(gt_mask, pseudo_label_cam).sum()
+                    union = np.logical_or(gt_mask, pseudo_label_cam).sum()
+                    iou_cam = intersection / (union + 1e-8)  # Avoid division by zero
+
+                    iou_cam_sum += iou_cam
+                    iou_aff_sum += iou_aff
+                    total_samples += 1
+
+                    fig, ax = plt.subplots(1, 5, figsize=(25, 5))
+
+                    ax[0].imshow(img_np)
+                    ax[0].set_title('Original Image')
+                    ax[0].axis('off')
+
+                    # CAM visualization
+                    ax[1].imshow(refined_np, cmap='jet')
+                    ax[1].set_title('Affinity')
+                    ax[1].axis('off')
+
+                    # cam_np = (cam_np - cam_np.min()) / (cam_np.max() - cam_np.min() + 1e-8)
+                    print(f"CAM min: {cam_np.min()}, max: {cam_np.max()}, mean: {cam_np.mean()}")
+                    cam_np = cam_np.squeeze()
+                    ax[2].imshow(cam_np, cmap='jet')
+                    ax[2].set_title('Class Activation Map')
+                    ax[2].axis('off')
+
+                    ax[3].imshow(gt_mask, cmap='gray')
+                    ax[3].set_title(f'Ground Truth')
+                    ax[3].axis('off')
+
+                    ax[4].imshow(pseudo_label_aff, cmap='gray')
+                    ax[4].set_title(f'pseudo_label')
+                    ax[4].axis('off')
+
+                    save_dir = os.path.join(args.save_visualization_path, args.backbone)
+                    os.makedirs(save_dir, exist_ok=True)
+
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
+                    plt.close()
+
+                    # pseudo_label_dir = os.path.join(args.save_pseudo_labels_path, args.backbone)
+                    # os.makedirs(pseudo_label_dir, exist_ok=True)
+
+                    # cv2.imwrite(
+                    #     os.path.join(pseudo_label_dir, f"pseudo_label_{img_id}.png"),
+                    #     (pseudo_label * 255).astype(np.uint8)
+                    # )
+
+                    # heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+                    # cam_dir=os.path.join(args.save_cam_path, args.backbone)
+                    # os.makedirs(cam_dir, exist_ok=True)
+
+                    # cv2.imwrite(
+                    #     os.path.join(cam_dir, f"cam_vis_{img_id}.png"),
+                    #     heatmap
+                    # )
+    print(
+        f"\nFinal aff/cam Mean IoU: {iou_aff_sum / total_samples:.4f} {iou_cam_sum / total_samples:.4f}(over {total_samples} samples)")
+
 
 

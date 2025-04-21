@@ -1,0 +1,39 @@
+#!/bin/bash
+#set job requirement
+#SBATCH --partition=gpu_a100
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=12:00:00
+#SBATCH --mem=62000M
+#SBATCH --output=train-%A.out
+#SBATCH --error=train-%A.err
+
+module purge
+module load 2022
+module load Anaconda3/2022.05
+
+
+#conda remove --name supervised-learning --all
+
+#conda update -n base -c defaults conda
+
+if [ ! -d "$HOME/.conda/envs/supervised-learning" ]; then
+    conda env create -f training/environment.yml
+fi
+echo "Environment init"
+
+source activate supervised-learning
+
+
+pip install opencv-python
+pip install torchvision
+pip install pycocotools
+pip install ttach
+pip install albumentations
+pip install grad-cam
+pip install --upgrade mxnet
+pip install numpy==1.23.1
+echo "Environment activated"
+
+
+python training/Weakly-supervised/infer_affinityNet.py
