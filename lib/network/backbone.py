@@ -16,6 +16,8 @@ from lib.network.SERT import *
 from lib.network.resnet38d import *
 from lib.network.vgg16d import convert_caffe_to_torch
 from lib.network.AffinityNet import *
+from lib.network.mix_transformer import *
+from lib.network.FickleNet import *
 
 
 def choose_backbone(backbone_name, pretrained=True, num_classes=1):
@@ -65,6 +67,32 @@ def choose_backbone(backbone_name, pretrained=True, num_classes=1):
         net = vit_base_patch16_224(pretrained=True, num_classes=num_classes)
         return net
 
+    elif backbone_name == 'mix_transformer':
+
+        model = mit_b5()
+
+        model_dict = model.state_dict()
+        checkpoint = torch.load('./pretrained/mit_b5.pth', map_location='cpu')
+        if 'model' in checkpoint:
+            checkpoint = checkpoint['model']
+        else:
+            checkpoint = checkpoint
+        # for k in ['head.weight', 'head.bias']:
+        #     print(f"Removing key {k} from pretrained checkpoint")
+        #     del checkpoint[k]
+        # for k in ['conv_cls_head.weight', 'conv_cls_head.bias']:
+        #     print(f"Removing key {k} from pretrained checkpoint")
+        #     del checkpoint[k]
+
+        checkpoint.pop('head.weight')
+        checkpoint.pop('head.bias')
+
+        pretrained_dict = {k: v for k, v in checkpoint.items() if k in model_dict}
+        model_dict.update(pretrained_dict)
+        model.load_state_dict(model_dict)
+
+        return model
+
     elif backbone_name == 'conformer':
         model = Net_sm()
         checkpoint = torch.load("./pretrained/transcam_6485.pth", map_location='cpu')
@@ -87,22 +115,16 @@ def choose_backbone(backbone_name, pretrained=True, num_classes=1):
     elif backbone_name == 'deeplabv3plus_Xception':  # Add new option
         net = DeepLabv3_plus(pretrained=True)
         return net
+
     elif backbone_name == "Swin":
         net = SwinTransformerV2(num_classes=1)
         return net
 
-    elif backbone_name == 'resnet18':
-        return resnet34(pretrained=pretrained, num_classes=num_classes)
-    elif backbone_name == 'resnet34':
-        return resnet34(pretrained=pretrained, num_classes=num_classes)
-    elif backbone_name == 'resnet50':
-        return resnet50(pretrained=pretrained, num_classes=num_classes)
-
     elif backbone_name == 'resnet101':
         return resnet101(pretrained=pretrained, num_classes=num_classes)
 
-    elif backbone_name == 'resnet152':
-        return resnet152(pretrained=pretrained, num_classes=num_classes)
+    elif backbone_name == 'FickleNet':
+        return fickleresnet101(pretrained=pretrained, num_classes=num_classes)
     else:
         raise ValueError('Backbone name not recognized')
 

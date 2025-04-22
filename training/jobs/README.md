@@ -12,10 +12,17 @@ scp zzhang4@snellius.surf.nl:/home/zzhang4/Masterthesis/model/deeplabv3plus_resn
 
 ```
 
+
 Run the Job in a SLURM Cluster
 ```
 sbatch training/jobs/supervised_train.job
 ```
+Submitting an array job
+```
+sbatch -a 1-100 my_job.sh
+```
+
+In general, smaller jobs (jobs requiring only a few processors and/or little time) are somewhat more easy to fit in than large jobs.
 
 monitor job with:
 ```
@@ -49,4 +56,12 @@ check the storage
 ```
 prjspc-quota /projects/0/prjs1418
 /gpfs/work5/0/prjs1418|TiB:quota=1.00,limit=1.00,usage=0.0000%|Inodes:quota=1000000,limit=1100000,usage=0.0001%
+```
+
+
+The output of any program is buffered before it is written to e.g. stdout
+```
+enable unbuffered output with python's built-in -u  flag:
+python -u <main.py>
+
 ```

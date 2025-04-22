@@ -101,6 +101,7 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=stride[1])
         self.layer3 = self._make_layer(block, 256, layers[2], stride=stride[2])
         self.layer4 = self._make_layer(block, 512, layers[3], stride=stride[3])
+
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, 1000)
 
@@ -135,17 +136,19 @@ class ResNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        f1 = self.layer1(x)
+        f2 = self.layer2(f1)
+        f3 = self.layer3(f2)
+        f4 = self.layer4(f3)
 
-        x = self.avgpool(x)
+        x = self.avgpool(f4)
         x = x.view(x.size(0), -1)
+
         embedded = x
+
         x = self.fc(x)
         # Returns both the feature embedding and the classification output
-        return embedded, x
+        return x, embedded, [f2, f3, f4]
 
     def get_parameter_groups(self, print_fn=print):
         groups = ([], [], [], [])
@@ -221,3 +224,6 @@ def resnet152(pretrained=False, stride=None, num_classes=1, **kwargs):
         model.load_state_dict(model_zoo.load_url(model_urls['resnet152']), strict=True)
     model.fc = nn.Linear(512 * Bottleneck.expansion, num_classes)
     return model
+
+
+

@@ -18,23 +18,42 @@ from lib.network.backbone import choose_backbone
 #     result = result.transpose(2, 3).transpose(1, 2)
 #     return result
 
-def reshape_transform(tensor):
-    batch_size, num_tokens, hidden_dim = tensor.shape
+# reshape the output tensor from a Vision Transformer (ViT) model
+# (or similar transformer-based models) so that it can be visualized or processed
+# in a way similar to convolutional neural network (CNN) feature maps.
 
-    # Exclude class token
-    num_patches = num_tokens - 1
+def reshape_transform(tensor, height=16, width=16):
+    """
 
-    # Compute spatial size (assuming square patches)
-    height = width = int(num_patches ** 0.5)
+    - ViT/DeiT (assumes class token at position 0, square patches)
+    - MiT (e.g., SegFormer, no class token, known H×W)
+    """
+    # For CNN-like feature maps, just return as is
+    if tensor.dim() == 4:
+        return tensor
+    else:
+        #  # For ViT-like models
+        batch_size, num_tokens, hidden_dim = tensor.shape
+        h = w = int(num_tokens ** 0.5)
+        if h * w == num_tokens:
+            # For MiT (e.g., SegFormer)
+            reshaped = tensor.reshape(batch_size, height, width, hidden_dim)
+            return reshaped.permute(0, 3, 1, 2)
+        # Exclude class token
+        else:
+            # For ViT/DeiT (assume 1 class token)
+            num_patches = num_tokens - 1
+            # Compute spatial size (assuming square patches)
+            height = width = int(num_patches ** 0.5)
 
-    if height * width != num_patches:
-        raise ValueError(f"Invalid num_patches {num_patches}, cannot reshape.")
+            if height * width != num_patches:
+                raise ValueError(f"Cannot infer square patch layout from {num_patches} patches.")
 
-    result = tensor[:, 1:, :].reshape(batch_size, height, width, hidden_dim)
+            result = tensor[:, 1:, :].reshape(batch_size, height, width, hidden_dim)
 
-    # Change from (B, H, W, C) to (B, C, H, W) for CNN-like processing
-    result = result.permute(0, 3, 1, 2)
-    return result
+            # Change from (B, H, W, C) to (B, C, H, W) for CNN-like processing
+            result = result.permute(0, 3, 1, 2)
+            return result
 
 
 def show_cam_on_image(img: np.ndarray,
@@ -97,6 +116,8 @@ def get_cam_for_image(image_tensor, model, target_layers, target_category=None):
     model.eval()
     # Create GradCAM object
     # print([layer.__class__.__name__ for layer in target_layers])
+    if model is None:
+        raise ValueError("Model is None in get_cam_for_image")
 
     cam = GradCAM(model=model, target_layers=target_layers, reshape_transform=reshape_transform)
 
@@ -139,6 +160,8 @@ def get_cam_for_image(image_tensor, model, target_layers, target_category=None):
 
 def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, num_samples_per_batch=3, max_batches=50):
     print("Generating CAM for dataset...")
+    if model is None:
+        raise ValueError("Model is None in generate_cam_for_dataset")
     device = next(model.parameters()).device
 
     if save_dir:
@@ -186,7 +209,7 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
             axs[i, 1].set_title(f"CAM (Pred: {pred_class})")
             axs[i, 1].axis('off')
 
-            # # Plot grayscale CAM
+            # Plot grayscale CAM
             # axs[i, 2].imshow(grayscale_cam, cmap='gray')
             # axs[i, 2].set_title("Grayscale CAM")
             # axs[i, 2].axis('off')
@@ -221,10 +244,10 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
     iou_sum = 0.0
     total_samples = 0
 
-    max_batch = 2
+    # max_batch=2
     for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
-        if max_batch is not None and batch_idx >= max_batch:
-            break
+        # if max_batch is not None and batch_idx >= max_batch:
+        #     break
         # Move entire batch to device
         images = images.to(device)
 
@@ -234,8 +257,7 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                 outputs = outputs[0]
             pred_classes = torch.argmax(outputs, dim=1)
 
-        # Process each image in the batch
-        for img_idx, (image, pred_class, image_id, mask) in enumerate(zip(images, pred_classes, image_ids, masks)):
+        for i, (image, pred_class, image_id, mask) in enumerate(zip(images, pred_classes, image_ids, masks)):
             # Generate CAM for predicted class
             targets = [ClassifierOutputTarget(pred_class)]
 
@@ -243,10 +265,16 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
             grayscale_cam = cam(input_tensor=image.unsqueeze(0),
                                 targets=targets)
 
-            # Remove batch dimension and ensure 2D array
-            grayscale_cam = grayscale_cam[0]  # Shape (H, W)
+            grayscale_cam = grayscale_cam[0]
+            # print("cam_min,cam_max",grayscale_cam.min(),grayscale_cam.max())
 
-            # Create binary mask
+            top10 = np.percentile(grayscale_cam, 90)
+            print("keep top 10% ", top10)
+
+            top25 = np.percentile(grayscale_cam, 75)
+
+            print("keep top 25% ", top25)
+
             pseudo_label = (grayscale_cam > threshold).astype(np.float32)
 
             # Process mask
@@ -254,7 +282,9 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
             gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
             intersection = np.logical_and(gt_mask, pseudo_label).sum()
             union = np.logical_or(gt_mask, pseudo_label).sum()
-            iou = intersection / (union + 1e-8)  # Avoid division by zero
+
+            iou = intersection / (union + 1e-8)
+
             iou_sum += iou
             total_samples += 1
 
@@ -280,6 +310,8 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
             ax[0].axis('off')
 
             # CAM visualization
+            # print(f"CAM min: {grayscale_cam.min()}, max: {grayscale_cam.max()}, mean: {grayscale_cam.mean()}")
+
             ax[1].imshow(grayscale_cam, cmap='jet')
             ax[1].set_title('Class Activation Map')
             ax[1].axis('off')
