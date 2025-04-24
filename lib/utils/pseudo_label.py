@@ -6,10 +6,11 @@ import matplotlib.pyplot as plt
 import os
 from lib.utils.grad_cam import GradCAM
 from lib.network.backbone import choose_backbone
+import torch.nn.functional as F
 
 
 # def reshape_transform(tensor, height=14, width=14):
-#     #(batch_size, num_patches, hidden_dim). 
+#     #(batch_size, num_patches, hidden_dim).
 #     result = tensor[:, 1 :  , :].reshape(tensor.size(0),
 #         height, width, tensor.size(2))
 
@@ -234,116 +235,126 @@ def generate_cam_for_dataset(dataloader, model, target_layers, save_dir=None, nu
 def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold):
     os.makedirs(save_dir, exist_ok=True)
     device = next(model.parameters()).device
-    model.eval()  # Set model to evaluation mode
+    model.eval()
 
-    # Create GradCAM object
-    cam = GradCAM(model=model,
-                  target_layers=target_layers,
-                  reshape_transform=reshape_transform)
+    cam = GradCAM(model=model, target_layers=target_layers, reshape_transform=reshape_transform)
+    scales = [0.5, 1.0, 1.5, 2.0]
 
-    iou_sum = 0.0
-    total_samples = 0
+    scale_metrics = {s: {'iou_sum': 0.0, 'count': 0} for s in scales}
+    scale_metrics['avg'] = {'iou_sum': 0.0, 'count': 0}
 
-    # max_batch=2
     for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
-        # if max_batch is not None and batch_idx >= max_batch:
-        #     break
-        # Move entire batch to device
+        B, C, h_orig, w_orig = images.shape
         images = images.to(device)
+        scale_cams = []
+        scale_strs = []
 
-        with torch.no_grad():
-            outputs = model(images)
-            if isinstance(outputs, tuple):  # Handle tuple output
-                outputs = outputs[0]
-            pred_classes = torch.argmax(outputs, dim=1)
+        for j in range(B):
+            image = images[j]
+            image_id = image_ids[j]
+            mask = masks[j]
+            for scale in scales:
+                h_new, w_new = int(h_orig * scale), int(w_orig * scale)
+                image_resized = F.interpolate(image.unsqueeze(0), size=(h_new, w_new), mode='bilinear',
+                                              align_corners=False)
 
-        for i, (image, pred_class, image_id, mask) in enumerate(zip(images, pred_classes, image_ids, masks)):
-            # Generate CAM for predicted class
-            targets = [ClassifierOutputTarget(pred_class)]
+                with torch.no_grad():
+                    outputs = model(image_resized)
+                    if isinstance(outputs, tuple):
+                        outputs = outputs[0]
 
-            # Unsqueeze to add batch dimension
-            grayscale_cam = cam(input_tensor=image.unsqueeze(0),
-                                targets=targets)
+                pred_class = torch.argmax(outputs, dim=1)
 
-            grayscale_cam = grayscale_cam[0]
-            # print("cam_min,cam_max",grayscale_cam.min(),grayscale_cam.max())
+                grayscale_cam = cam(input_tensor=image_resized, targets=[ClassifierOutputTarget(pred_class)])[0]
+                if scale != 1.0:  # No need to resize if scale is already 1.0
+                    grayscale_cam = cv2.resize(grayscale_cam, (w_orig, h_orig), interpolation=cv2.INTER_LINEAR)
 
-            top10 = np.percentile(grayscale_cam, 90)
-            print("keep top 10% ", top10)
+                pseudo_label = (grayscale_cam > threshold).astype(np.float32)
 
-            top25 = np.percentile(grayscale_cam, 75)
+                gt_mask = mask.squeeze().cpu().numpy()
+                gt_mask = (gt_mask > 0.5).astype(np.float32)
 
-            print("keep top 25% ", top25)
+                intersection = np.logical_and(gt_mask, pseudo_label).sum()
+                union = np.logical_or(gt_mask, pseudo_label).sum()
+                iou = intersection / (union + 1e-8)
 
-            pseudo_label = (grayscale_cam > threshold).astype(np.float32)
-
-            # Process mask
-            gt_mask = mask.squeeze().cpu().numpy()
-            gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
-            intersection = np.logical_and(gt_mask, pseudo_label).sum()
-            union = np.logical_or(gt_mask, pseudo_label).sum()
-
-            iou = intersection / (union + 1e-8)
-
-            iou_sum += iou
-            total_samples += 1
-
+                scale_metrics[scale]['iou_sum'] += iou
+                scale_metrics[scale]['count'] += 1
+                scale_strs.append(str(scale))
+                scale_cams.append(grayscale_cam)
             if isinstance(image_id, torch.Tensor):
-                img_id = image_id.item()  # Convert tensor to Python scalar
+                img_id = image_id.item()
             elif isinstance(image_id, str) and image_id.isdigit():
-                img_id = int(image_id)  # Convert string number to int
+                img_id = int(image_id)
             else:
-
                 img_id = image_id
 
-            mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
-            std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
+            if batch_idx == 0:
+                fig, axs = plt.subplots(1, 4, figsize=(25, 5))
 
-            img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
-            img_np = std * img_np + mean  # Denormalize
+                for i in range(4):
+                    axs[i].imshow(scale_cams[i], cmap='jet')
+                    axs[i].set_title(f'CAM @ Scale {scale_strs[i]}')
+                    axs[i].axis('off')
+
+                plt.tight_layout()
+                plt.savefig(os.path.join(save_dir, f"all_scales_cam_{image_id}.png"), bbox_inches='tight')
+                plt.close()
+
+            fused_cam = np.mean(scale_cams, axis=0)
+
+            pseudo_label = (fused_cam > threshold).astype(np.float32)
+
+            gt_mask = mask.squeeze().cpu().numpy()
+            gt_mask = (gt_mask > 0.5).astype(np.float32)
+
+            intersection = np.logical_and(gt_mask, pseudo_label).sum()
+            union = np.logical_or(gt_mask, pseudo_label).sum()
+            iou = intersection / (union + 1e-8)
+
+            scale_metrics['avg']['iou_sum'] += iou
+            scale_metrics['avg']['count'] += 1
+
+            mean = np.array([0.485, 0.456, 0.406])
+            std = np.array([0.229, 0.224, 0.225])
+
+            img_np = image.cpu().numpy().transpose(1, 2, 0)
+            img_np = std * img_np + mean
             img_np = np.clip(img_np, 0, 1)
-            fig, ax = plt.subplots(1, 4, figsize=(20, 5))
-            # Original image
 
+            fig, ax = plt.subplots(1, 4, figsize=(20, 5))
             ax[0].imshow(img_np)
             ax[0].set_title('Original Image')
             ax[0].axis('off')
 
-            # CAM visualization
-            # print(f"CAM min: {grayscale_cam.min()}, max: {grayscale_cam.max()}, mean: {grayscale_cam.mean()}")
-
-            ax[1].imshow(grayscale_cam, cmap='jet')
-            ax[1].set_title('Class Activation Map')
+            ax[1].imshow(fused_cam, cmap='jet')
+            ax[1].set_title('Class Activation Map (Avg)')
             ax[1].axis('off')
 
-            # Pseudo mask
             ax[2].imshow(pseudo_label, cmap='gray')
             ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
             ax[2].axis('off')
 
-            # Ground truth mask
             ax[3].imshow(gt_mask, cmap='gray')
             ax[3].set_title('Ground Truth Mask')
             ax[3].axis('off')
 
             plt.tight_layout()
-            plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
+            plt.savefig(os.path.join(save_dir, f'fusion_visualization_{img_id}.png'), bbox_inches='tight')
             plt.close()
 
             # Save pseudo-label
             cv2.imwrite(
-                os.path.join(save_dir, f"pseudo_label_{img_id}.png"),
+                os.path.join(save_dir, f"fusion_pseudo_label_{img_id}.png"),
                 (pseudo_label * 255).astype(np.uint8)
             )
-
-            # Save CAM visualization
+            # Save CAM heatmap
             heatmap = cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET)
             cv2.imwrite(
-                os.path.join(save_dir, f"cam_{img_id}.png"),
+                os.path.join(save_dir, f"fusion_cam_{img_id}.png"),
                 heatmap
             )
-
-        print(f"Batch {batch_idx + 1}/{len(dataloader)} - Current Mean IoU: {iou_sum / total_samples:.4f}")
-
-    # Final statistics
-    print(f"\nFinal Mean IoU: {iou_sum / total_samples:.4f} (over {total_samples} samples)")
+    print("\nScale-wise IoU Results:")
+    for scale, metrics in scale_metrics.items():
+        mean_iou = metrics['iou_sum'] / metrics['count']
+        print(f"Scale {scale}: Mean IoU = {mean_iou:.4f}")
