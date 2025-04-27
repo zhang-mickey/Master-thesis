@@ -27,7 +27,7 @@ all the codes are for binary classification and semantic segmentation
 
 Instead of resize, crop the images to generate [512,512]
 
-![img_1.png](img_1.png)
+
 
 7 month 
 
@@ -52,10 +52,12 @@ Resnet101
 
 #### Refinement
 
+**Threshold**
+
 ##### Adversarial erasing
 
 ##### AffinityNet
-![img.png](img.png)
+
 
 #####
 # Choosing the layer(s) to extract activations from
