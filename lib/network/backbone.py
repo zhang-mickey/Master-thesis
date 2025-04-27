@@ -18,11 +18,22 @@ from lib.network.vgg16d import convert_caffe_to_torch
 from lib.network.AffinityNet import *
 from lib.network.mix_transformer import *
 from lib.network.FickleNet import *
+from lib.network.ToCo_model import *
 
 
 def choose_backbone(backbone_name, pretrained=True, num_classes=1):
-    # segmentation
-    if backbone_name == 'deeplabv3plus_resnet50':
+    # end to end WSSS
+    if backbone_name == 'ToCo':
+        net = ToCo_network(
+            "deit_base_patch16_224",
+            num_classes=num_classes,
+            pretrained=pretrained,
+            init_momentum=0.9,
+            aux_layer=9
+        )
+        return net
+    # fully supervised segmentation
+    elif backbone_name == 'deeplabv3plus_resnet50':
         net = DeepLabV3Plus(pretrained=True)
         return net
     elif backbone_name == 'deeplabv3plus_resnet101':
