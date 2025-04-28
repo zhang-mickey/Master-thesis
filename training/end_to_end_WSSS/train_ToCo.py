@@ -14,6 +14,7 @@ from torch.optim.lr_scheduler import _LRScheduler, StepLR
 from torch.utils.data import WeightedRandomSampler
 import matplotlib.pyplot as plt
 from torch.utils.data import random_split
+import sklearn.metrics as metrics
 
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
@@ -23,6 +24,7 @@ sys.path.append(project_root)
 from lib.dataset.cropDataset import *
 from lib.dataset.SmokeDataset import *
 from lib.dataset.augDataset import *
+from lib.dataset.localcropDataset import *
 from lib.network.backbone import choose_backbone
 from lib.utils.splitdataset import *
 from lib.utils.transform import *
@@ -33,6 +35,7 @@ from lib.utils.metrics import *
 from lib.utils.CRF import *
 from lib.utils.PAR import *
 from lib.utils.image_mask_visualize import *
+from lib.network.ToCo_model import *
 
 
 class PolyLR(_LRScheduler):
@@ -100,18 +103,22 @@ def parse_args():
     parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
     parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
-    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=15, help="epoch number")
     parser.add_argument("--lr", type=float, default=0.05, help="initial learning rate")
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
 
+    parser.add_argument("--local_crop_size", default=96, type=int, help="crop_size for local view")
+
     parser.add_argument("--backbone", type=str, default="ToCo",
                         help="choose backone")
-
-    parser.add_argument('--high_thresold', default=0.65, type=float,
+    parser.add_argument("--ignore_index", default=255, type=int, help="random index")
+    parser.add_argument('--high_threshold', default=0.65, type=float,
                         help='high threshold')
-    parser.add_argument('--low_thresold', default=0.65, type=float,
+    parser.add_argument('--low_threshold', default=0.25, type=float,
                         help='low threshold')
+    parser.add_argument('--background_threshold', default=0.45, type=float,
+                        help='background threshold')
 
     parser.add_argument("--cam_scales", default=(1.0, 0.5, 1.5),
                         help="multi_scales for cam")
@@ -158,11 +165,12 @@ if __name__ == "__main__":
 
     # Split dataset
     if args.use_crop:
-        train_dataset = CropDataset(
+        train_dataset = LocalCropDataset(
             args.crop_smoke_image_folder,
             args.crop_mask_folder,
             transform=image_transform,
             mask_transform=mask_transform,
+            local_crop_size=args.local_crop_size,
         )
         total_size = len(train_dataset)
         train_size = int(0.8 * total_size)
@@ -256,14 +264,15 @@ if __name__ == "__main__":
     model.to(device)
 
     # ---- Define Loss & Optimizer ----
-    avg_meter = AverageMeter()
+    avg_meter = AverageMeter('cls_loss', 'ptc_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss')
 
     loss_layer = DenseEnergyLoss(weight=1e-7, sigma_rgb=15, sigma_xy=100, scale_factor=0.5)
+
     ncrops = 10
 
     CTC_loss = CTCLoss_neg(ncrops=ncrops, temp=1.0).cuda()
 
-    par = PAR(num_iter=10, dialations=[1, 2, 4, 8, 12, 24]).cuda()
+    par = PAR(num_iter=10, dilations=[1, 2, 4, 8, 12, 24]).cuda()
 
     optimizer = optim.SGD(
         # params=[
@@ -289,78 +298,124 @@ if __name__ == "__main__":
         train_accuracy = 0.0
         train_iou = 0.0
 
-        for i, (images, cls_labels, image_ids, masks) in enumerate(train_loader):
+        for i, (images, cls_labels, image_ids, masks, crops) in enumerate(train_loader):
             images = images.to(device)
+            images_denorm = denormalize_img2(images)
+            cls_labels = cls_labels.to(device)
 
             masks = masks.to(device)
             # Reset gradients
             optimizer.zero_grad()
+
             cams, cams_aux = multi_scale_cam2(model, inputs=images, scales=args.cam_scales)
 
             roi_mask = cam_to_roi_mask2(cams_aux.detach(), cls_label=cls_labels,
-                                        hig_thre=args.high_thresold,
-                                        low_thre=args.low_thresold)
+                                        hig_thre=args.high_threshold,
+                                        low_thre=args.low_threshold)
+
             local_crops, flags = crop_from_roi_neg(images=crops[2], roi_mask=roi_mask,
-                                                   crop_num=ncrops - 2, crop_size=224)
+                                                   crop_num=ncrops - 2, crop_size=96)
             roi_crops = crops[:2] + local_crops
+            roi_crops = [crop.to(device) for crop in roi_crops]
+            n_iter = (epoch - 1) * len(train_loader) + i
 
-            cls, segs, fmap, cls_aux, out_t, out_s = model(inputs, crops=roi_crops, n_iter=n_iter)
+            cls, segs, fmap, cls_aux, out_t, out_s = model(images, crops=roi_crops, n_iter=n_iter)
 
+            # print("cls",cls.shape)
+            #             print("cls_labels",cls_labels.shape)
+            #             print("cls_aux",cls_aux.shape)
+            #             cls torch.Size([8, 2])
+            #             cls_labels torch.Size([8])
+            #              cls_aux torch.Size([8, 2])
+            if cls_labels.ndim == 1:
+                cls_labels = F.one_hot(cls_labels, num_classes=2).float()
             cls_loss = F.multilabel_soft_margin_loss(cls, cls_labels)
-            cls_loss_aux = F.multilabel_soft_margin_loss(cls_aus, cls_label)
+
+            cls_loss_aux = F.multilabel_soft_margin_loss(cls_aux, cls_labels)
 
             ctc_loss = CTC_loss(out_s, out_t, flags)
 
             valid_cam, _ = cam_to_label(
                 cams.detach(),
-                cls_label=cls_label,
-                img_box=img_box, ignore_mid=True,
-                bkg_thre=args.bkg_thre,
-                high_thre=args.high_thre,
-                low_thre=args.low_thre,
+                cls_label=cls_labels,
+                # img_box=None,
+                ignore_mid=True,
+                bkg_thre=args.background_threshold,
+                high_thre=args.high_threshold,
+                low_thre=args.low_threshold,
                 ignore_index=args.ignore_index)
 
             valid_cam_aux, _ = cam_to_label(
                 cams_aux.detach(),
-                cls_label=cls_label,
-                img_box=img_box,
+                cls_label=cls_labels,
+                # img_box=None,
                 ignore_mid=True,
-                bkg_thre=args.bkg_thre,
-                high_thre=args.high_thre,
-                low_thre=args.low_thre,
+                bkg_thre=args.background_threshold,
+                high_thre=args.high_threshold,
+                low_thre=args.low_threshold,
                 ignore_index=args.ignore_index)
-            if n_iter <= 12000:
-                refined_pseudo_label = refine_cams_with_bkg_v2(par, inputs_denorm, cams=valid_cam_aux,
-                                                               cls_labels=cls_label, high_thre=args.high_thre,
-                                                               low_thre=args.low_thre, ignore_index=args.ignore_index,
-                                                               img_box=img_box, )
+
+            if epoch <= 7:
+                refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam_aux,
+                                                               cls_labels=cls_labels,
+                                                               high_thre=args.high_threshold,
+                                                               low_thre=args.low_threshold,
+                                                               ignore_index=args.ignore_index,
+                                                               # img_box=img_box,
+                                                               )
             else:
-                refined_pseudo_label = refine_cams_with_bkg_v2(par, inputs_denorm, cams=valid_cam, cls_labels=cls_label,
-                                                               high_thre=args.high_thre, low_thre=args.low_thre,
-                                                               ignore_index=args.ignore_index, img_box=img_box, )
+                refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam,
+                                                               cls_labels=cls_labels,
+                                                               high_thre=args.high_threshold,
+                                                               low_thre=args.low_threshold,
+                                                               ignore_index=args.ignore_index,
+                                                               # img_box=img_box,
+                                                               )
+            # print("refined_pseudo_label.shape",refined_pseudo_label.shape)
+            print(f"Label min: {refined_pseudo_label.min().item()}, max: {refined_pseudo_label.max().item()}")
+            print(f"Number of classes in segs: {segs.size(1)}")
+            print(f"segs shape: {segs.shape}")
+
             segs = F.interpolate(segs, size=refined_pseudo_label.shape[1:], mode='bilinear', align_corners=False)
             seg_loss = get_seg_loss(segs, refined_pseudo_label.type(torch.long), ignore_index=args.ignore_index)
 
-            reg_loss = get_energy_loss(img=inputs, logit=segs, label=refined_pseudo_label, img_box=img_box,
-                                       loss_layer=loss_layer)
+            # reg_loss = get_energy_loss(
+            #     img=images,
+            #     logit=segs,
+            #     label=refined_pseudo_label,
+            #     # img_box=None,
+            #     loss_layer=loss_layer)
 
             resized_cams_aux = F.interpolate(cams_aux, size=fmap.shape[2:], mode="bilinear", align_corners=False)
-            _, pseudo_label_aux = cam_to_label(resized_cams_aux.detach(), cls_label=cls_label, img_box=img_box,
-                                               ignore_mid=True, bkg_thre=args.bkg_thre, high_thre=args.high_thre,
-                                               low_thre=args.low_thre, ignore_index=args.ignore_index)
+
+            _, pseudo_label_aux = cam_to_label(resized_cams_aux.detach(), cls_label=cls_labels,
+                                               # img_box=None,
+                                               ignore_mid=True,
+                                               bkg_thre=args.background_threshold,
+                                               high_thre=args.high_threshold,
+                                               low_thre=args.low_threshold,
+                                               ignore_index=args.ignore_index)
+            print("pseudo_label_aux", pseudo_label_aux.shape)
+
             aff_mask = label_to_aff_mask(pseudo_label_aux)
+
             ptc_loss = get_masked_ptc_loss(fmap, aff_mask)
             # ptc_loss = get_ptc_loss(fmap, low_fmap)
-
-            if n_iter <= 8000:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.0 * seg_loss + 0.0 * reg_loss
-            elif n_iter <= 12000:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.1 * seg_loss + args.w_reg * reg_loss
+            # Early training phase - Using only classification losses")
+            if epoch <= 5:
+                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.0 * seg_loss
+                # loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.0 * seg_loss + 0.0 * reg_loss
+            # Middle training phase - Adding segmentation and regularization losses"
+            elif epoch <= 9:
+                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.1 * seg_loss
+                # loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.1 * seg_loss + args.w_reg * reg_loss
+            # Final training phase - Using all losses
             else:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.2 * ptc_loss + 0.5 * ctc_loss + 0.1 * seg_loss + args.w_reg * reg_loss
+                # loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.2 * ptc_loss + 0.5 * ctc_loss + 0.1 * seg_loss + args.w_reg * reg_loss
+                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.2 * ptc_loss + 0.5 * ctc_loss + 0.1 * seg_loss
 
             cls_pred = (cls > 0).type(torch.int16)
-            cls_score = evaluate.multilabel_score(cls_label.cpu().numpy()[0], cls_pred.cpu().numpy()[0])
+            cls_score = metrics.f1_score(cls_labels.cpu().numpy().flatten(), cls_pred.cpu().numpy().flatten())
 
             avg_meter.add({
                 'cls_loss': cls_loss.item(),
@@ -369,6 +424,7 @@ if __name__ == "__main__":
                 'cls_loss_aux': cls_loss_aux.item(),
                 'seg_loss': seg_loss.item(),
                 'cls_score': cls_score.item(),
+                'total_loss': loss.item(),
             })
 
             loss.backward()
@@ -376,64 +432,50 @@ if __name__ == "__main__":
             optimizer.step()
             if args.lr_scheduler == 'poly':
                 scheduler.step()
-            # Update loss
-            running_loss += loss.item()
 
-            # Calculate metrics
-            acc = calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
-            iou = calculate_iou(outputs.squeeze(1), masks.squeeze(1))
+        #     iou = calculate_iou(outputs.squeeze(1), masks.squeeze(1))
 
-            if isinstance(acc, torch.Tensor):
-                train_accuracy += acc.item()
-            else:
-                train_accuracy += acc
-            if isinstance(iou, torch.Tensor):
-                train_iou += iou.item()
-            else:
-                train_iou += iou
-
-        avg_train_loss = running_loss / len(train_loader)
-        avg_train_accuracy = train_accuracy / len(train_loader)
-        avg_train_iou = train_iou / len(train_loader)
+        #     if isinstance(iou, torch.Tensor):
+        #         train_iou += iou.item()
+        #     else:
+        #         train_iou += iou
+        # avg_train_iou = train_iou / len(train_loader)
 
         # Validation Phase
-        model.eval()
-        val_loss = 0.0
-        val_accuracy = 0.0
-        val_iou = 0.0
 
-        with torch.no_grad():
-            for i, (images, labels, _, masks) in enumerate(val_loader):
-                images, masks = images.to(device), masks.to(device)
-                outputs = model(images)
+        # model.eval()
+        # # val_loss = 0.0
+        # # val_iou = 0.0
+        # with torch.no_grad():
+        #     for i,(images, cls_labels, _, masks,crops) in enumerate(val_loader):
+        #         images, masks = images.to(device), masks.to(device)
+        #         cls_labels = cls_labels.to(device)
+        #         # num_masks=outputs.size(0)
+        #     # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
+        #     if args.loss_type == 'dice':
+        #         num_masks=outputs.size(0)
+        #     # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
+        #         loss = criterion(outputs.squeeze(1), masks.squeeze(1),num_masks)  # Remove channel dimension
 
-                # num_masks=outputs.size(0)
-            # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
-            if args.loss_type == 'dice':
-                num_masks = outputs.size(0)
-                # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
-                loss = criterion(outputs.squeeze(1), masks.squeeze(1), num_masks)  # Remove channel dimension
+        #     else:
+        #         loss =criterion(outputs.squeeze(1), masks.squeeze(1))
 
-            else:
-                loss = criterion(outputs.squeeze(1), masks.squeeze(1))
+        #     val_loss += loss.item()
 
-            val_loss += loss.item()
+        #     # Calculate metrics
+        #     acc = calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
+        #     iou = calculate_iou(outputs.squeeze(1), masks.squeeze(1))
 
-            # Calculate metrics
-            acc = calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
-            iou = calculate_iou(outputs.squeeze(1), masks.squeeze(1))
+        #     val_accuracy += acc
+        #     val_iou += iou
 
-            val_accuracy += acc
-            val_iou += iou
-
-        avg_val_loss = val_loss / len(val_loader)
-        avg_val_accuracy = val_accuracy / len(val_loader)
-        val_miou = val_iou / len(val_loader)
-
-        print(
-            f"Epoch {epoch - 1}/{args.num_epochs}, Train Loss: {avg_train_loss:.4f}, Train Acc: {avg_train_accuracy:.4f}, Train mIoU: {avg_train_iou:.4f}")
-        print(f"Val Loss: {avg_val_loss:.4f}, Val Acc: {avg_val_accuracy:.4f}, Val mIoU: {val_miou:.4f}")
-
+        # avg_val_loss = val_loss / len(val_loader)
+        # avg_val_accuracy = val_accuracy / len(val_loader)
+        # val_miou = val_iou / len(val_loader)
+        # print(f"Val Loss: {avg_val_loss:.4f}, Val Acc: {avg_val_accuracy:.4f}, Val mIoU: {val_miou:.4f}")
+        print(f"Epoch: {epoch}/{args.num_epochs} "
+              f"Loss: {avg_meter.get('total_loss'):.4f}, "
+              f"Cls Score: {avg_meter.get('cls_score'):.4f}")
         if args.lr_scheduler == 'step':
             scheduler.step()
 
@@ -447,111 +489,111 @@ if __name__ == "__main__":
     # ---- Inference----
 
     # ---- Load the trained model for testing ----
-    model.load_state_dict(torch.load(save_path))
-    model.eval()
+    # model.load_state_dict(torch.load(save_path))
+    # model.eval()
 
-    # ---- Testing Loop ----
-    test_loss = 0.0
-    test_accuracy = 0.0
-    test_iou = 0.0
-    test_dice = 0.0
-    test_f1 = 0.0
+    #     # ---- Testing Loop ----
+    # test_loss = 0.0
+    # test_accuracy = 0.0
+    # test_iou = 0.0
+    # test_dice = 0.0
+    # test_f1 = 0.0
 
-    with torch.no_grad():
-        for i, (images, labels, _, masks) in enumerate(test_loader):
-            images = images.to(device)
-            masks = masks.to(device)
+    # with torch.no_grad():
+    #     for i, (images, labels, _, masks) in enumerate(test_loader):
+    #         images = images.to(device)
+    #         masks = masks.to(device)
 
-            # foreground_prob
-            outputs = model(images)
+    #         #foreground_prob
+    #         outputs = model(images)
 
-            if args.loss_type == 'dice':
-                num_masks = outputs.size(0)
-                # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
-                loss = criterion(outputs.squeeze(1), masks.squeeze(1), num_masks)  # Remove channel dimension
+    #         if args.loss_type == 'dice':
+    #             num_masks=outputs.size(0)
+    #         # print(f"Outputs shape: {outputs.shape}, Masks shape: {masks.shape}")
+    #             loss = criterion(outputs.squeeze(1), masks.squeeze(1),num_masks)  # Remove channel dimension
 
-            else:
-                loss = criterion(outputs.squeeze(1), masks.squeeze(1))
-            # Calculate metrics
-            test_loss += loss.item()
-            test_accuracy += calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
-            test_iou += calculate_iou(outputs.squeeze(1), masks.squeeze(1))
+    #         else:
+    #             loss =criterion(outputs.squeeze(1), masks.squeeze(1))
+    #         # Calculate metrics
+    #         test_loss += loss.item()
+    #         test_accuracy += calculate_accuracy(outputs.squeeze(1), masks.squeeze(1))
+    #         test_iou += calculate_iou(outputs.squeeze(1), masks.squeeze(1))
 
-            # Additional metrics
-            test_dice += calculate_dice(outputs.squeeze(1), masks.squeeze(1))
-            test_f1 += calculate_f1(outputs.squeeze(1), masks.squeeze(1))
+    #         # Additional metrics
+    #         test_dice += calculate_dice(outputs.squeeze(1), masks.squeeze(1))
+    #         test_f1 += calculate_f1(outputs.squeeze(1), masks.squeeze(1))
 
-            # Apply CRF post-processing
-            batch_size = images.size(0)
-            for j in range(batch_size):
-                # (3,512,512)
-                image_j = img_denorm(images[j].cpu().numpy()).astype(np.uint8)
-                mask_j = masks[j].cpu().numpy()
+    #         # Apply CRF post-processing
+    #         batch_size = images.size(0)
+    #         for j in range(batch_size):
+    #             #(3,512,512)
+    #             image_j = img_denorm(images[j].cpu().numpy()).astype(np.uint8)
+    #             mask_j = masks[j].cpu().numpy()
 
-                # outputs_j = outputs[j].cpu().numpy()
-                # per-pixel class probability map (after softmax)
-                outputs_j = torch.softmax(outputs[j], dim=0).cpu().numpy()
-                # Handle binary case background score
+    #             # outputs_j = outputs[j].cpu().numpy()
+    #             #per-pixel class probability map (after softmax)
+    #             outputs_j = torch.softmax(outputs[j], dim=0).cpu().numpy()
+    #             # Handle binary case background score
 
-                if outputs_j.shape[0] == 1:
-                    fg = outputs_j[0]
-                    bg = 1 - fg
-                    outputs_j = np.stack([bg, fg], axis=0)
+    #             if outputs_j.shape[0] == 1:
+    #                 fg = outputs_j[0]
+    #                 bg = 1 - fg
+    #                 outputs_j = np.stack([bg, fg], axis=0)
 
-                n_classes = outputs_j.shape[0]
+    #             n_classes = outputs_j.shape[0]
 
-                crf_outputs = dense_crf(outputs_j, image_j, n_classes=n_classes, n_iter=10)
-                # Convert CRF output to tensor and move to device
-                # print("CRF output shape:", crf_outputs.shape) #CRF output shape: (2, 512, 512)
+    #             crf_outputs=dense_crf(outputs_j,image_j,n_classes=n_classes,n_iter=10)
+    #              # Convert CRF output to tensor and move to device
+    #             # print("CRF output shape:", crf_outputs.shape) #CRF output shape: (2, 512, 512)
 
-                crf_mask = np.argmax(crf_outputs, axis=0)  # (H, W)
-                # foreground_mask = crf_outputs[1]
-                # crf_mask= (foreground_mask > 0.5).astype(np.uint8)
+    #             crf_mask = np.argmax(crf_outputs, axis=0)  # (H, W)
+    #             # foreground_mask = crf_outputs[1]
+    #             # crf_mask= (foreground_mask > 0.5).astype(np.uint8)
 
-                # print("Unique values in CRF mask:", np.unique(crf_mask))
+    #             # print("Unique values in CRF mask:", np.unique(crf_mask))
 
-                refined_mask_tensor = torch.from_numpy(crf_mask).to(device)
+    #             refined_mask_tensor = torch.from_numpy(crf_mask).to(device)
 
-                mask_j = masks[j].squeeze().long()
+    #             mask_j = masks[j].squeeze().long()
 
-                refined_mask_tensor = refined_mask_tensor.unsqueeze(0)  # shape [1, H, W]
-                mask_j = mask_j.unsqueeze(0)  # ensure same shape
+    #             refined_mask_tensor = refined_mask_tensor.unsqueeze(0)  # shape [1, H, W]
+    #             mask_j = mask_j.unsqueeze(0)  # ensure same shape
 
-                save_dir = os.path.join(args.supervised_crf_mask_path, args.backbone)
-                os.makedirs(save_dir, exist_ok=True)
-                save_path = os.path.join(save_dir, f"supervised_image_{i}_mask_{j}.png")
-                fig, ax = plt.subplots(1, 4, figsize=(25, 5))
-                image_j = image_j.transpose(1, 2, 0)
+    #             save_dir = os.path.join(args.supervised_crf_mask_path, args.backbone)
+    #             os.makedirs(save_dir, exist_ok=True)
+    #             save_path = os.path.join(save_dir, f"supervised_image_{i}_mask_{j}.png")
+    #             fig, ax = plt.subplots(1, 4, figsize=(25, 5))
+    #             image_j = image_j.transpose(1, 2, 0)
 
-                ax[0].imshow(image_j)
-                ax[0].set_title('Original Image')
-                ax[0].axis('off')
+    #             ax[0].imshow(image_j)
+    #             ax[0].set_title('Original Image')
+    #             ax[0].axis('off')
 
-                ax[1].imshow(crf_mask, cmap='gray')
-                ax[1].set_title('crf_mask')
-                ax[1].axis('off')
+    #             ax[1].imshow(crf_mask, cmap='gray')
+    #             ax[1].set_title('crf_mask')
+    #             ax[1].axis('off')
 
-                ax[2].imshow(mask_j.cpu().squeeze().numpy(), cmap='gray')
-                ax[2].set_title('Ground Truth Mask')
-                ax[2].axis('off')
-                prob_map = outputs_j[1]
+    #             ax[2].imshow(mask_j.cpu().squeeze().numpy(), cmap='gray')
+    #             ax[2].set_title('Ground Truth Mask')
+    #             ax[2].axis('off')
+    #             prob_map=outputs_j[1]
 
-                ax[3].imshow(prob_map.squeeze(), cmap='viridis')
-                ax[3].set_title('Output Foreground Prob')
-                ax[3].axis('off')
+    #             ax[3].imshow(prob_map.squeeze(), cmap='viridis')
+    #             ax[3].set_title('Output Foreground Prob')
+    #             ax[3].axis('off')
 
-                plt.tight_layout()
-                plt.savefig(os.path.join(save_dir, f"supervised_image_{i}_mask_{j}.png"), bbox_inches='tight')
-                plt.close()
+    #             plt.tight_layout()
+    #             plt.savefig(os.path.join(save_dir, f"supervised_image_{i}_mask_{j}.png"), bbox_inches='tight')
+    #             plt.close()
 
-    # Calculate averages
-    avg_test_loss = test_loss / len(test_loader)
-    avg_test_acc = test_accuracy / len(test_loader)
-    avg_test_iou = test_iou / len(test_loader)
-    avg_test_dice = test_dice / len(test_loader)
-    avg_test_f1 = test_f1 / len(test_loader)
+    # # Calculate averages
+    # avg_test_loss = test_loss / len(test_loader)
+    # avg_test_acc = test_accuracy / len(test_loader)
+    # avg_test_iou = test_iou / len(test_loader)
+    # avg_test_dice = test_dice / len(test_loader)
+    # avg_test_f1 = test_f1 / len(test_loader)
 
-    print("\nTest Results:")
-    print(f"Loss: {avg_test_loss:.4f} | mIoU: {avg_test_iou:.4f}")
-    print(f"Dice: {avg_test_dice:.4f} | F1: {avg_test_f1:.4f}")
+    # print("\nTest Results:")
+    # print(f"Loss: {avg_test_loss:.4f} | mIoU: {avg_test_iou:.4f}")
+    # print(f"Dice: {avg_test_dice:.4f} | F1: {avg_test_f1:.4f}")
 

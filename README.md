@@ -5,6 +5,14 @@ all the codes are for binary classification and semantic segmentation
 
 # Prerequisite
 
+
+## build python extension module
+The implementation of DenseCRF loss depends on fast bilateral filtering, which is provided in C++. Use SWIG to wrap C++ for python and then build the python module of bilateral filtering.
+```
+cd wrapper
+swig -python -c++ bilateralfilter.i
+python setup.py install
+```
 # Usage(Multi-stage)
 
 **1. Train a classification network to get CAMs**
