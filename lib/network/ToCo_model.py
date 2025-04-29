@@ -2,7 +2,7 @@ import pdb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import numpy as np
 from lib.network.ToCo_decoder_conv_head import *
 from . import ToCo_encoder as encoder
 
@@ -235,7 +235,9 @@ def crop_from_roi_neg(images, roi_mask=None, crop_num=8, crop_size=96):
     b, c, h, w = images.shape
 
     temp_crops = torch.zeros(size=(b, crop_num, c, crop_size, crop_size)).to(images.device)
+
     flags = torch.ones(size=(b, crop_num + 2)).to(images.device)
+
     margin = crop_size // 2
 
     for i1 in range(b):
@@ -255,6 +257,7 @@ def crop_from_roi_neg(images, roi_mask=None, crop_num=8, crop_size=96):
                 flags[i1, i2 + 2] = 0
 
     _crops = torch.chunk(temp_crops, chunks=crop_num, dim=1, )
+
     crops = [c[:, 0] for c in _crops]
 
     return crops, flags
@@ -263,31 +266,46 @@ def crop_from_roi_neg(images, roi_mask=None, crop_num=8, crop_size=96):
 def cam_to_label(cam, cls_label,
                  # img_box=None,
                  bkg_thre=None,
-                 high_thre=None, low_thre=None, ignore_mid=False, ignore_index=None):
+                 high_thre=None, low_thre=None,
+                 ignore_mid=False,
+                 ignore_index=None):
     b, c, h, w = cam.shape
     # pseudo_label = torch.zeros((b,h,w))
     cls_label_rep = cls_label.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
     ## Mask CAMs with class labels
     valid_cam = cls_label_rep * cam
+    # print("valid_cam_value",valid_cam.max(),valid_cam.min())
     # Get pseudo-labels from CAMs
     cam_value, _pseudo_label = valid_cam.max(dim=1, keepdim=False)
-    _pseudo_label += 1
+    # _pseudo_label += 1
     _pseudo_label[cam_value <= bkg_thre] = 0
 
-    if ignore_mid:
-        _pseudo_label[cam_value <= high_thre] = ignore_index
-        _pseudo_label[cam_value <= low_thre] = 0
-    pseudo_label = torch.ones_like(_pseudo_label) * ignore_index
-    pseudo_label = _pseudo_label
+    print("_pseudo_label", np.unique(_pseudo_label.cpu().numpy()))
 
-    return valid_cam, pseudo_label
+    # print("cam_value",cam_value.max(),cam_value.min())
+    # if ignore_index is not None:
+    #     _pseudo_label[cam_value<=high_thre] = ignore_index
+    #     _pseudo_label[cam_value<=low_thre] = 0
+    # print("_pseudo_label",_pseudo_label.max(),_pseudo_label.min())
+    if ignore_mid == True:
+        return valid_cam, _pseudo_label
+    return _pseudo_label
+    # if ignore_mid:
+    #     _pseudo_label[cam_value<=high_thre] = ignore_index
+    #     _pseudo_label[cam_value<=low_thre] = 0
+    # pseudo_label = torch.ones_like(_pseudo_label) * ignore_index
+    # pseudo_label = _pseudo_label
+
+    # return valid_cam, pseudo_label
 
 
 def label_to_aff_mask(cam_label, ignore_index=255):
     b, h, w = cam_label.shape
-
-    _cam_label = cam_label.reshape(b, 1, -1)
+    # (b,h,w)
+    _cam_label = cam_label.reshape(b, 1, -1)  # (b,1,h*w)
+    # (b,h*w,h*w)
     _cam_label_rep = _cam_label.repeat([1, _cam_label.shape[-1], 1])
+
     _cam_label_rep_t = _cam_label_rep.permute(0, 2, 1)
     aff_label = (_cam_label_rep == _cam_label_rep_t).type(torch.long)
 
@@ -296,6 +314,7 @@ def label_to_aff_mask(cam_label, ignore_index=255):
         aff_label[i, _cam_label_rep[i, 0, :] == ignore_index, :] = ignore_index
     ## Ignore diagonal
     aff_label[:, range(h * w), range(h * w)] = ignore_index
+    # (b,h*w,h*w)
     return aff_label
 
 
@@ -305,7 +324,8 @@ def refine_cams_with_bkg_v2(ref_mod=None,
                             # img_box=None,
                             down_scale=2):
     b, _, h, w = images.shape
-    _images = F.interpolate(images, size=[h // down_scale, w // down_scale], mode="bilinear", align_corners=False)
+    _images = F.interpolate(images, size=[h // down_scale, w // down_scale],
+                            mode="bilinear", align_corners=False)
 
     bkg_h = torch.ones(size=(b, 1, h, w)) * high_thre
     bkg_h = bkg_h.to(cams.device)
@@ -325,10 +345,15 @@ def refine_cams_with_bkg_v2(ref_mod=None,
     refined_label_l = refined_label.clone()
 
     cams_with_bkg_h = torch.cat((bkg_h, cams), dim=1)
-    _cams_with_bkg_h = F.interpolate(cams_with_bkg_h, size=[h // down_scale, w // down_scale], mode="bilinear",
+
+    _cams_with_bkg_h = F.interpolate(cams_with_bkg_h,
+                                     size=[h // down_scale, w // down_scale], mode="bilinear",
                                      align_corners=False)  # .softmax(dim=1)
+
     cams_with_bkg_l = torch.cat((bkg_l, cams), dim=1)
-    _cams_with_bkg_l = F.interpolate(cams_with_bkg_l, size=[h // down_scale, w // down_scale], mode="bilinear",
+
+    _cams_with_bkg_l = F.interpolate(cams_with_bkg_l,
+                                     size=[h // down_scale, w // down_scale], mode="bilinear",
                                      align_corners=False)  # .softmax(dim=1)
 
     for idx in range(b):
@@ -338,6 +363,7 @@ def refine_cams_with_bkg_v2(ref_mod=None,
 
         _refined_label_h = _refine_cams(ref_mod=ref_mod, images=_images[[idx], ...],
                                         cams=valid_cams_h, valid_key=valid_key, orig_size=(h, w))
+
         _refined_label_l = _refine_cams(ref_mod=ref_mod, images=_images[[idx], ...],
                                         cams=valid_cams_l, valid_key=valid_key, orig_size=(h, w))
 
@@ -358,3 +384,33 @@ def _refine_cams(ref_mod, images, cams, valid_key, orig_size):
     refined_label = valid_key[refined_label]
 
     return refined_label
+
+
+def _fast_hist(label_true, label_pred, num_classes):
+    mask = (label_true >= 0) & (label_true < num_classes)
+    hist = np.bincount(
+        num_classes * label_true[mask].astype(int) + label_pred[mask],
+        minlength=num_classes ** 2,
+    )
+    return hist.reshape(num_classes, num_classes)
+
+
+def scores(label_trues, label_preds, num_classes=1):
+    hist = np.zeros((num_classes, num_classes))
+    for lt, lp in zip(label_trues, label_preds):
+        hist += _fast_hist(lt.flatten(), lp.flatten(), num_classes)
+    acc = np.diag(hist).sum() / hist.sum()
+    _acc_cls = np.diag(hist) / hist.sum(axis=1)
+    acc_cls = np.nanmean(_acc_cls)
+    iu = np.diag(hist) / (hist.sum(axis=1) + hist.sum(axis=0) - np.diag(hist))
+    valid = hist.sum(axis=1) > 0  # added
+    mean_iu = np.nanmean(iu[valid])
+    freq = hist.sum(axis=1) / hist.sum()
+    cls_iu = dict(zip(range(num_classes), iu))
+
+    return {
+        "pAcc": acc,
+        "mAcc": acc_cls,
+        "miou": mean_iu,
+        "iou": cls_iu,
+    }

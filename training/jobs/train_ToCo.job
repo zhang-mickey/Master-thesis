@@ -1,0 +1,55 @@
+#!/bin/bash
+#set job requirement
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=03:00:00
+#SBATCH --mem=128000M
+#SBATCH --output=train-%A.out
+#SBATCH --error=train-%A.err
+
+module purge
+module load 2022
+module load Anaconda3/2022.05
+
+
+#conda remove --name supervised-learning --all
+
+#conda update -n base -c defaults conda
+
+if [ ! -d "$HOME/.conda/envs/supervised-learning" ]; then
+    conda env create -f training/environment.yml
+fi
+echo "Environment init"
+
+source activate supervised-learning
+
+
+pip install opencv-python
+pip install torchvision
+pip install pycocotools
+pip install ttach
+pip install scikit-learn
+pip install timm
+pip install einops
+pip install albumentations
+pip install numpy==1.23.1
+pip install git+https://github.com/RogerQi/pydensecrf.git
+
+conda install -y swig
+
+echo "Building bilateral filter wrapper..."
+cd wrapper
+swig -python -c++ bilateralfilter.i
+python setup.py install build_ext --inplace
+cp _bilateralfilter.*.so .
+cd ..
+
+export PYTHONPATH=$PYTHONPATH:$PWD/wrapper
+
+echo "Running main training script..."
+
+echo "Environment activated"
+
+
+python training/End_to_End_WSSS/train_ToCo.py
