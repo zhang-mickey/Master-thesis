@@ -7,6 +7,7 @@ import os
 from lib.utils.grad_cam import GradCAM
 from lib.network.backbone import choose_backbone
 import torch.nn.functional as F
+import math
 
 
 # def reshape_transform(tensor, height=14, width=14):
@@ -36,8 +37,12 @@ def reshape_transform(tensor, height=16, width=16):
         #  # For ViT-like models
         batch_size, num_tokens, hidden_dim = tensor.shape
         h = w = int(num_tokens ** 0.5)
+
         if h * w == num_tokens:
             # For MiT (e.g., SegFormer)
+            total_elements = tensor.numel()
+            spatial_elements = total_elements // (batch_size * hidden_dim)
+            height = width = int(math.sqrt(spatial_elements))
             reshaped = tensor.reshape(batch_size, height, width, hidden_dim)
             return reshaped.permute(0, 3, 1, 2)
         # Exclude class token
@@ -238,7 +243,7 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
     model.eval()
 
     cam = GradCAM(model=model, target_layers=target_layers, reshape_transform=reshape_transform)
-    scales = [0.5, 1.0, 1.5, 2.0]
+    scales = [0.5, 1.0, 1.5]
 
     scale_metrics = {s: {'iou_sum': 0.0, 'count': 0} for s in scales}
     scale_metrics['avg'] = {'iou_sum': 0.0, 'count': 0}
@@ -246,10 +251,10 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
     for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
         B, C, h_orig, w_orig = images.shape
         images = images.to(device)
-        scale_cams = []
-        scale_strs = []
 
         for j in range(B):
+            scale_cams = []
+            scale_strs = []
             image = images[j]
             image_id = image_ids[j]
             mask = masks[j]
@@ -289,24 +294,27 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
             else:
                 img_id = image_id
 
-            if batch_idx == 0:
+            if j <= 2:
+                # image_scale_cams = scale_cams[-4:]
+                # image_scale_strs = scale_strs[-4:]
                 fig, axs = plt.subplots(1, 4, figsize=(25, 5))
-
-                for i in range(4):
+                fused_cam = np.mean(scale_cams, axis=0)
+                for i in range(3):
                     axs[i].imshow(scale_cams[i], cmap='jet')
                     axs[i].set_title(f'CAM @ Scale {scale_strs[i]}')
                     axs[i].axis('off')
-
+                axs[3].imshow(fused_cam, cmap='jet')
+                axs[3].set_title(f'fused_CAM')
+                axs[3].axis('off')
                 plt.tight_layout()
                 plt.savefig(os.path.join(save_dir, f"all_scales_cam_{image_id}.png"), bbox_inches='tight')
                 plt.close()
 
             fused_cam = np.mean(scale_cams, axis=0)
 
-            pseudo_label = (fused_cam > threshold).astype(np.float32)
+            # fused_cam=np.max(scale_cams,axis=0)
 
-            gt_mask = mask.squeeze().cpu().numpy()
-            gt_mask = (gt_mask > 0.5).astype(np.float32)
+            pseudo_label = (fused_cam > threshold).astype(np.float32)
 
             intersection = np.logical_and(gt_mask, pseudo_label).sum()
             union = np.logical_or(gt_mask, pseudo_label).sum()

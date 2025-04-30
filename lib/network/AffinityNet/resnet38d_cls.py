@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from lib.network.resnet38d import *
+from lib.network.AffinityNet.resnet38d import *
 
 # for classification purposes
 

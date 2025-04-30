@@ -10,10 +10,10 @@ from lib.network.ViTSegmenter import *
 # from lib.network.ViTSegmenter import create_segmenter
 from lib.network.deeplab_xception import *
 from lib.network.Conformer import *
-from lib.network.resnet38_cls import ResNet38_cls
+from lib.network.AffinityNet.resnet38_cls import ResNet38_cls
 from lib.network.swin_transformer_v2 import *
 from lib.network.SERT import *
-from lib.network.resnet38d import *
+from lib.network.AffinityNet.resnet38d import *
 from lib.network.vgg16d import convert_caffe_to_torch
 from lib.network.AffinityNet import *
 from lib.network.mix_transformer import *

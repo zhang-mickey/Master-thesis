@@ -21,20 +21,23 @@ project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
 
 # Add the project root to sys.path
 sys.path.append(project_root)
-
+from lib.network.AffinityNet.resnet38_cls import *
 from lib.dataset.SmokeDataset import *
 from lib.dataset.WeaklyDataset import *
 from lib.dataset.cropDataset import *
+from lib.dataset.aug_cropDataset import *
 from lib.network.backbone import choose_backbone
 from lib.utils.splitdataset import *
 from lib.utils.transform import *
 from lib.network import *
+from lib.utils.dark_channel_prior import *
 from lib.loss.loss import *
 from inference.inference import *
 from lib.utils.metrics import *
 from lib.utils.saliencymap import *
 from PIL import Image
 from lib.utils.pseudo_label import *
+from lib.utils.cam import *
 from lib.utils.augmentation import *
 from lib.utils.image_mask_visualize import *
 
@@ -62,6 +65,7 @@ def parse_args():
 
     parser.add_argument("--save_cam_path", type=str, default=os.path.join(project_root, "result/cam"),
                         help="Path to save the cam")
+
     parser.add_argument("--save_visualization_path", type=str,
                         default=os.path.join(project_root, "result/visualization"),
                         help="Path to save the cam")
@@ -92,9 +96,9 @@ def parse_args():
     # train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
 
-    parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
+    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate")
 
-    parser.add_argument("--num_epochs", type=int, default=1, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=15, help="epoch number")
 
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -106,8 +110,15 @@ def parse_args():
     parser.add_argument("--CAM_type", type=str, default='GradCAM',
                         choices=['grad', 'TransCAM', 'TsCAM'],
                         help="CAM type")
+
+    # parser.add_argument("--backbone", type=str, default="resnet101",
+    #                     help="choose backone")
+
     # parser.add_argument("--backbone", type=str, default="transformer",
     #                     help="choose backone")
+
+    parser.add_argument("--backbone", type=str, default="mix_transformer",
+                        help="choose backone")
 
     # parser.add_argument("--CAM_type", type=str, default='TransCAM',
     #                     choices=['grad', 'TransCAM', 'TsCAM'],
@@ -116,9 +127,11 @@ def parse_args():
     # parser.add_argument("--backbone", type=str, default="conformer",
     #                     help="choose backone")
 
-    parser.add_argument("--backbone", type=str, default="resnet38d",
-                        help="choose backone")
+    # parser.add_argument("--backbone", type=str, default="resnet38d",
+    #                     help="choose backone")
 
+    # parser.add_argument("--backbone", type=str, default="vgg16d",
+    #                     help="choose backone")
     parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
 
     parser.add_argument('--threshold', default=0.3, type=float, help='Threshold for CAM')
@@ -128,9 +141,10 @@ def parse_args():
 if __name__ == "__main__":
     print("Starting training...")
     args = parse_args()
-    print(vars(args))
 
+    print(vars(args))
     print(torch.cuda.is_available())
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # %%
     # image_transform = transforms.Compose([
@@ -148,7 +162,7 @@ if __name__ == "__main__":
     random.seed(args.manual_seed)
 
     if args.use_crop:
-        train_dataset = CropDataset(
+        train_dataset = aug_CropDataset(
             args.crop_smoke_image_folder,
             args.crop_mask_folder,
             args.crop_non_smoke_folder,
@@ -158,7 +172,7 @@ if __name__ == "__main__":
         )
 
         total_size = len(train_dataset)
-        train_size = int(0.8 * total_size)
+        train_size = int(0.7 * total_size)
         test_size = total_size - train_size
 
         # Split dataset
@@ -168,9 +182,26 @@ if __name__ == "__main__":
         train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
         test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
 
-        print(f"Train size: {len(train_subset)} | Test size: {len(test_subset)}")
+        train_dataset_1 = CropDataset(
+            args.crop_smoke_image_folder,
+            args.crop_mask_folder,
+            args.crop_non_smoke_folder,
+            transform=image_transform,
+            mask_transform=mask_transform,
+            img_size=(args.crop_size, args.crop_size)
+        )
 
-        original_train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
+        total_size = len(train_dataset_1)
+        train_size = int(0.7 * total_size)
+        test_size = total_size - train_size
+
+        # Split dataset
+        train_subset_1, test_subset_1 = random_split(train_dataset_1, [train_size, test_size])
+
+        # Create DataLoaders
+        train_loader_1 = DataLoader(train_subset_1, batch_size=args.batch_size, shuffle=True)
+        test_loader_1 = DataLoader(test_subset_1, batch_size=args.batch_size, shuffle=False)
+
 
     #
     #  resize
@@ -250,10 +281,10 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
 
-    avg_meter = AverageMeter('loss', 'accuracy')
+    avg_meter = AverageMeter('loss', 'accuracy', 'loss_entropy', 'dcp_loss')
     # max_batches = 2
 
-    if args.backbone == 'resnet38d':
+    if args.backbone == 'vgg16:':
         for epoch in range(1, (args.num_epochs + 1)):
             avg_meter.pop()
             data_load_start = time.time()
@@ -272,9 +303,9 @@ if __name__ == "__main__":
                 optimizer.step()
                 # Update AverageMeter with loss and accuracy
                 avg_meter.add({'loss': loss.item(), 'accuracy': acc})
-                if batch_idx % 10 == 0:
-                    print(
-                        f"Epoch [{epoch}/{args.num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.4f}")
+                # if batch_idx % 10 == 0:
+                #     print(f"Epoch [{epoch}/{args.num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.4f}")
+
             scheduler.step()
             avg_loss, avg_acc = avg_meter.get('loss', 'accuracy')
             print(f"Epoch [{epoch}/{args.num_epochs}], Loss: {avg_loss:.4f}, Accuracy: {avg_acc:.4f}")
@@ -295,89 +326,100 @@ if __name__ == "__main__":
         test_accuracy = 0.0
         test_predictions = []
         test_ground_truth = []
+        iou_sum = 0.0
+        total_samples = 0
         for batch_idx, (images, labels, image_ids, masks) in enumerate(train_loader):
             # (batchsize,channel,height,width)
             images = images.to(device)  # [B, num_classes]
-
             masks = masks.to(device)
-
-            # cam_list=[]
             orig_img_size = images.shape[2:]
-            iou_sum = 0.0
-            total_samples = 0
-
-            with torch.no_grad():
+            # with torch.no_grad():
+            if True:
                 for i, (img, label, img_id, mask) in enumerate(zip(images, labels, image_ids, masks)):
                     image = img
+                    img = img.unsqueeze(0)
 
-                    cams = model.forward_cam(images)
-                    cam = F.interpolate(cams, size=orig_img_size,
-                                        mode='bilinear', align_corners=False)[0]  # [C, H, W]
+                    grad_cam = compute_grad_cam(model, img)
+                    grad_cam = F.interpolate(grad_cam, size=orig_img_size,
+                                             mode='bilinear', align_corners=False)[0]  # [C, H, W]
+                    # [1, H, W]
+                    grad_cam = grad_cam[0]  # [H, W]
+                    grad_cam = grad_cam.cpu().numpy()
 
-                    cam = cam[0]  # [H, W]
-                    cam = cam.cpu().numpy()
+                    with torch.no_grad():
+                        outputs = model(img)
+                        cams = model.forward_cam(img)
+                        cam = F.interpolate(cams, size=orig_img_size,
+                                            mode='bilinear', align_corners=False)[0]  # [C, H, W]
+                        cam = cam[0]  # [H, W]
+                        cam = cam.cpu().numpy()
 
-                    mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
-                    std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
+                        mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
+                        std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
 
-                    img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
-                    img_np = std * img_np + mean  # Denormalize
-                    img_np = np.clip(img_np, 0, 1)
+                        img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+                        img_np = std * img_np + mean  # Denormalize
+                        img_np = np.clip(img_np, 0, 1)
 
-                    pseudo_label = (cam > args.threshold).astype(np.float32)
-                    # cam_list.append(cam)
-                    gt_mask = mask.squeeze().cpu().numpy()
-                    gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
+                        pseudo_label = (cam > args.threshold).astype(np.float32)
 
-                    intersection = np.logical_and(gt_mask, pseudo_label).sum()
-                    union = np.logical_or(gt_mask, pseudo_label).sum()
-                    iou = intersection / (union + 1e-8)  # Avoid division by zero
-                    iou_sum += iou
-                    total_samples += 1
-                    fig, ax = plt.subplots(1, 4, figsize=(20, 5))
+                        # cam_list.append(cam)
+                        gt_mask = mask.squeeze().cpu().numpy()
+                        gt_mask = (gt_mask > 0.5).astype(np.float32)  # Ensure binary mask
 
-                    ax[0].imshow(img_np)
-                    ax[0].set_title('Original Image')
-                    ax[0].axis('off')
+                        intersection = np.logical_and(gt_mask, pseudo_label).sum()
+                        union = np.logical_or(gt_mask, pseudo_label).sum()
+                        iou = intersection / (union + 1e-8)  # Avoid division by zero
+                        iou_sum += iou
+                        total_samples += 1
+                        fig, ax = plt.subplots(1, 4, figsize=(25, 5))
 
-                    # CAM visualization
-                    ax[1].imshow(cam, cmap='jet')
-                    ax[1].set_title('Class Activation Map')
-                    ax[1].axis('off')
+                        ax[0].imshow(img_np)
+                        ax[0].set_title('Original Image')
+                        ax[0].axis('off')
 
-                    # Pseudo mask
-                    ax[2].imshow(pseudo_label, cmap='gray')
-                    ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
-                    ax[2].axis('off')
+                        # CAM visualization
+                        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+                        ax[1].imshow(cam, cmap='jet')
+                        ax[1].set_title('Class Activation Map')
+                        ax[1].axis('off')
 
-                    # Ground truth mask
-                    ax[3].imshow(gt_mask, cmap='gray')
-                    ax[3].set_title('Ground Truth Mask')
-                    ax[3].axis('off')
+                        # # Pseudo mask
+                        # ax[2].imshow(pseudo_label, cmap='gray')
+                        # ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
+                        # ax[2].axis('off')
+                        ax[2].imshow(grad_cam, cmap='jet')
+                        ax[2].set_title('Grad_CAM')
+                        ax[2].axis('off')
 
-                    save_dir = os.path.join(args.save_visualization_path, args.backbone)
-                    os.makedirs(save_dir, exist_ok=True)
+                        # Ground truth mask
+                        ax[3].imshow(gt_mask, cmap='gray')
+                        ax[3].set_title('Ground Truth Mask')
+                        ax[3].axis('off')
 
-                    plt.tight_layout()
-                    plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
-                    plt.close()
+                        save_dir = os.path.join(args.save_visualization_path, args.backbone)
+                        os.makedirs(save_dir, exist_ok=True)
 
-                    pseudo_label_dir = os.path.join(args.save_pseudo_labels_path, args.backbone)
-                    os.makedirs(pseudo_label_dir, exist_ok=True)
+                        plt.tight_layout()
+                        plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
+                        plt.close()
 
-                    cv2.imwrite(
-                        os.path.join(pseudo_label_dir, f"pseudo_label_{img_id}.png"),
-                        (pseudo_label * 255).astype(np.uint8)
-                    )
+                        pseudo_label_dir = os.path.join(args.save_pseudo_labels_path, args.backbone)
+                        os.makedirs(pseudo_label_dir, exist_ok=True)
 
-                    heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
-                    cam_dir = os.path.join(args.save_cam_path, args.backbone)
-                    os.makedirs(cam_dir, exist_ok=True)
+                        cv2.imwrite(
+                            os.path.join(pseudo_label_dir, f"pseudo_label_{img_id}.png"),
+                            (pseudo_label * 255).astype(np.uint8)
+                        )
 
-                    cv2.imwrite(
-                        os.path.join(cam_dir, f"cam_vis_{img_id}.png"),
-                        heatmap
-                    )
+                        heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+                        cam_dir = os.path.join(args.save_cam_path, args.backbone)
+                        os.makedirs(cam_dir, exist_ok=True)
+
+                        cv2.imwrite(
+                            os.path.join(cam_dir, f"cam_vis_{img_id}.png"),
+                            heatmap
+                        )
 
                 # print(f"Batch {batch_idx+1}/{len()} - Current Mean IoU: {iou_sum/total_samples:.4f}")
 
@@ -387,50 +429,72 @@ if __name__ == "__main__":
 
 
 
-    elif args.backbone == 'transformer':
+    elif args.backbone == 'transformer' or args.backbone == 'mix_transformer' or args.backbone == 'resnet101' or args.backbone == 'resnet38d':
+
+        train_losses = []
+        train_accuracies = []
         for epoch in range(1, (args.num_epochs + 1)):
 
             avg_meter.pop()
             data_load_start = time.time()
-            for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
-                # if batch_idx >= max_batches:
-                #     break  # Stop after two batches
 
+            for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
                 images, labels = images.to(device), labels.float().to(device)
                 mask = mask.to(device)
 
                 optimizer.zero_grad()
+
                 outputs = model(images)
+
                 if isinstance(outputs, tuple):
+                    attns = outputs[1]
+                    last_attn = attns[-1]
+                    dcp_map = []
+                    for img in images.cpu().numpy():
+                        img = img.transpose(1, 2, 0)
+                        dcp_map.append(get_dark_channel(img))
+                    dcp_map = np.stack(dcp_map, axis=0)
+                    # dcp_map = torch.tensor(dcp_map).to(device)
+
+                    dcp_loss = dcp_guidance_loss(last_attn, dcp_map)
+                    loss_entropy = attention_entropy_loss(last_attn)
                     outputs = outputs[0]
+
+                # outputs=outputs[-1]
                 outputs = outputs.squeeze(1)
+
                 acc = calculate_accuracy(outputs, labels)
 
-                loss = criterion(outputs, labels)
+                loss = criterion(outputs, labels) + 0.1 * loss_entropy + 0.1 * dcp_loss
                 loss.backward()
                 optimizer.step()
-                # Update AverageMeter with loss and accuracy
-                avg_meter.add({'loss': loss.item(), 'accuracy': acc})
-
-                if (batch_idx + 1) % 10 == 0:
-                    print(f"Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.2f}%")
-
-            # At the end of the epoch, print the average loss and accuracy
+                avg_meter.add({'loss': loss.item(), 'accuracy': acc,
+                               'loss_entropy': loss_entropy.item(),
+                               'dcp_loss': dcp_loss.item()})
 
             data_load_time = time.time() - data_load_start
 
             print(f"Data loading time: {data_load_time:.2f} seconds")
 
-            avg_loss, avg_acc = avg_meter.get('loss', 'accuracy')
-            print(f"Epoch [{epoch}/{args.num_epochs}], Avg Loss: {avg_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%")
-
-            # Step the schedulerscheduler.step()
+            avg_loss, avg_acc, avg_loss_entropy, avg_dcp_loss = avg_meter.get('loss', 'accuracy', 'loss_entropy',
+                                                                              'dcp_loss')
+            print(
+                f"Epoch [{epoch}/{args.num_epochs}], Avg cls Loss: {avg_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%,Avg loss_entropy: {avg_loss_entropy:.4f}")
+            train_losses.append(avg_loss)
+            train_accuracies.append(avg_acc)
             scheduler.step()
 
         save_path = os.path.join(
             os.path.dirname(args.save_model_path),
             f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
         )
+        save_loss_path = os.path.join(
+            os.path.dirname(args.save_visualization_path),
+            f"loss_{args.backbone}_{args.num_epochs}_{os.path.basename(args.save_visualization_path)}"
+        )
+
+        plot_loss_accuracy(train_losses, train_accuracies, save_loss_path)
+
         torch.save(model.state_dict(), save_path)
         print("Training complete! Model saved.")
 
@@ -446,7 +510,7 @@ if __name__ == "__main__":
         test_ground_truth = []
 
         with torch.no_grad():
-            for batch_idx, (images, labels, _, mask) in enumerate(test_loader):
+            for batch_idx, (images, labels, _, mask) in enumerate(test_loader_1):
                 images, labels = images.to(device), labels.float().to(device)
 
                 outputs = model(images)
@@ -467,13 +531,13 @@ if __name__ == "__main__":
                 test_predictions.extend(predictions.cpu().numpy())
                 test_ground_truth.extend(labels.cpu().numpy())
 
-                if (batch_idx + 1) % 5 == 0:
+                if (batch_idx + 1) % 50 == 0:
                     print(
-                        f"Test Batch [{batch_idx + 1}/{len(test_loader)}], Loss: {loss.item():.4f}, Accuracy: {acc:.2f}%")
+                        f"Test Batch [{batch_idx + 1}/{len(test_loader_1)}], ClS Loss: {loss.item():.4f}, Accuracy: {acc:.2f}%")
 
         # Calculate average metrics
-        avg_test_loss = test_loss / len(test_loader)
-        avg_test_accuracy = test_accuracy / len(test_loader)
+        avg_test_loss = test_loss / len(test_loader_1)
+        avg_test_accuracy = test_accuracy / len(test_loader_1)
 
         # precision = precision_score(test_ground_truth, test_predictions, zero_division=0)
         # recall = recall_score(test_ground_truth, test_predictions, zero_division=0)
@@ -481,7 +545,7 @@ if __name__ == "__main__":
         # conf_matrix = confusion_matrix(test_ground_truth, test_predictions)
 
         print("\n===== Test Results =====")
-        print(f"Average Loss: {avg_test_loss:.4f}")
+        print(f"Average CLS Loss: {avg_test_loss:.4f}")
         print(f"Accuracy: {avg_test_accuracy:.2f}%")
         # print(f"Precision: {precision:.4f}")
         # print(f"Recall: {recall:.4f}")
@@ -493,21 +557,29 @@ if __name__ == "__main__":
             target_layers = [model.layer4[-1]]  # Last layer of layer4
         elif args.backbone == "transformer":
             target_layers = [model.blocks[-1].norm1]  # Last transformer block
-        else:
-
-            target_layers = [list(model.children())[-3]]  # Example fallback
+        elif args.backbone == "mix_transformer":
+            target_layers = [model.blocks[-1].norm1]  # Last transformer block
+        elif args.backbone == "resnet38d":
+            target_layers = [model.dropout7]
 
         save_cam_path = os.path.join(
             os.path.dirname(args.save_cam_path),
             f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}"
         )
 
-        generate_cam_for_dataset(
-            dataloader=train_loader,
-            model=model,
-            target_layers=target_layers,
-            save_dir=save_cam_path,
-        )
+        # if model is None:
+        #     print("ERROR: Model is None before CAM generation!")
+        #     # Either exit or fix the model
+        # else:
+        #     print(f"Model type: {type(model)}")
+        #     print(f"Target layers: {target_layers}")
+
+        # generate_cam_for_dataset(
+        #     dataloader=train_loader,
+        #     model=model,
+        #     target_layers=target_layers,
+        #     save_dir=save_cam_path,
+        # )
 
         # Generate pseudo-labels
         # generate_pseudo_labels(
@@ -553,22 +625,22 @@ if __name__ == "__main__":
         model.eval()
         model.cuda()
 
-        for batch_idx, (images, masks, image_ids, labels) in enumerate(original_train_loader):
+        iou_sum = 0.0
+        total_samples = 0
+        for batch_idx, (images, labels, image_ids, masks) in enumerate(original_train_loader):
             # (batchsize,channel,height,width)
             images = images.to(device)  # [B, num_classes]
 
             masks = masks.to(device)
-
             # cam_list=[]
             orig_img_size = images.shape[2:]
-            iou_sum = 0.0
-            total_samples = 0
+
             with torch.no_grad():
                 for i, (img, label, img_id, mask) in enumerate(zip(images, labels, image_ids, masks)):
                     image = img.unsqueeze(0)  # [1, C, H, W]
 
                     # cam: [1, num_classes, H', W']
-                    logits_conv, logit_trans, cam = model(args.CAM_type, img)
+                    logits_conv, logit_trans, cam = model(args.CAM_type, image)
 
                     # Remove background channel if your model outputs it
                     cam = F.interpolate(cam, size=orig_img_size,
@@ -580,7 +652,7 @@ if __name__ == "__main__":
                     mean = np.array([0.485, 0.456, 0.406])  # Adjust based on your dataset
                     std = np.array([0.229, 0.224, 0.225])  # Adjust based on your dataset
 
-                    img_np = image.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+                    img_np = img.cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
                     img_np = std * img_np + mean  # Denormalize
                     img_np = np.clip(img_np, 0, 1)
 
@@ -615,6 +687,9 @@ if __name__ == "__main__":
                     ax[3].set_title('Ground Truth Mask')
                     ax[3].axis('off')
 
+                    save_dir = os.path.join(args.save_visualization_path, args.backbone)
+                    os.makedirs(save_dir, exist_ok=True)
+
                     plt.tight_layout()
                     plt.savefig(os.path.join(save_dir, f'visualization_{img_id}.png'), bbox_inches='tight')
                     plt.close()
@@ -631,10 +706,10 @@ if __name__ == "__main__":
                         heatmap
                     )
 
-            # print(f"Batch {batch_idx + 1}/{len()} - Current Mean IoU: {iou_sum / total_samples:.4f}")
+            # print(f"Batch {batch_idx+1}/{len(dataloader)} - Current Mean IoU: {iou_sum/total_samples:.4f}")
 
-    # Final statistics
-    print(f"\nFinal Mean IoU: {iou_sum / total_samples:.4f} (over {total_samples} samples)")
+    # # Final statistics
+    # print(f"\nFinal Mean IoU: {iou_sum/total_samples:.4f} (over {total_samples} samples)")
 
     # multi-scale
     # sum_cam=np.sum(cam_list,axis=0)
@@ -651,3 +726,10 @@ if __name__ == "__main__":
 
     # if args.save_cam_path is not None:
     #     np.save(os.path.join(args.save_cam_path, f"cams_{batch_idx}.npy"), cam_dict)
+
+
+
+
+
+
+

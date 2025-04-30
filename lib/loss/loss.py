@@ -6,6 +6,8 @@ from torch.autograd import Variable
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
+import cv2
+import math
 
 sys.path.append("./wrapper/bilateralfilter/build/lib.linux-x86_64-3.8")
 from bilateralfilter import bilateralfilter, bilateralfilter_batch
@@ -193,7 +195,7 @@ def pixel_contrastive_loss(features, masks, temperature=0.1, max_samples=256):
 #     return (bg_loss + fg_loss) * 0.5
 
 def get_seg_loss(pred, label, ignore_index=255):
-    print('label unique values:', label.unique())
+    # print('label unique values:', label.unique())
     label = label.clone()
     label[label == 2] = 1
     label[~((label == 0) | (label == 1) | (label == ignore_index))] = ignore_index
@@ -370,4 +372,85 @@ class CTCLoss_neg(nn.Module):
         return total_loss
 
 
+def attention_entropy_loss(attn_weights):
+    """
+    Args:
+        attn_weights: tensor of shape [B, H, N, N] (batch, heads, num_tokens, num_tokens)
+                      Usually from transformer blocks' attention outputs
+    Returns:
+        Scalar loss encouraging compact attention
+    """
+    B, H, N, _ = attn_weights.shape
 
+    # Take attention from CLS token to image patches only
+    cls_attn = attn_weights[:, :, 0, 1:]  # [B, H, N_patches]
+
+    # Normalize across heads & tokens
+    cls_attn = cls_attn.reshape(B, -1)  # Flatten heads + patches → [B, H*N]
+    cls_attn = F.softmax(cls_attn, dim=-1)
+
+    # Entropy: H(p) = -sum(p * log(p + eps))
+    eps = 1e-8
+    entropy = -torch.sum(cls_attn * torch.log(cls_attn + eps), dim=-1).mean()
+
+    return entropy
+
+
+def resize_dcp_to_patches(dcp_batch, target_num_patches=255):
+    """
+    Resize DCP maps to match number of image patches used by vision transformer.
+
+    Args:
+        dcp_batch: NumPy array of shape [B, H, W]
+        target_num_patches: should match number of image patches (e.g., 255)
+
+    Returns:
+        Tensor of shape [B, target_num_patches]
+    """
+    B = dcp_batch.shape[0]
+
+    # Try common rectangular layouts
+    width = int(round(np.sqrt(target_num_patches)))
+    height = int(target_num_patches / width)
+
+    while height * width < target_num_patches:
+        width += 1
+        height = int(target_num_patches / width)
+
+    target_shape = (width, height)
+
+    resized_maps = []
+    for img in dcp_batch:
+        # Resize DCP map to match patch layout
+        resized = cv2.resize(img, target_shape, interpolation=cv2.INTER_LINEAR)
+        resized_maps.append(resized)
+
+    # Flatten spatial dimensions
+    dcp_flat = np.array(resized_maps).reshape(B, -1)  # Shape: [B, target_num_patches]
+
+    return torch.tensor(dcp_flat).float()
+
+
+def dcp_guidance_loss(model_attention, dcp_map):
+    B, H, N, _ = model_attention.shape  # e.g., [8, 8, 256, 256]
+    target_num_patches = N - 1  # Exclude CLS token → 255
+
+    # Resize DCP maps accordingly
+    dcp_flat = resize_dcp_to_patches(dcp_map, target_num_patches=target_num_patches).to(model_attention.device)
+
+    # Extract CLS attention only
+    cls_attn = model_attention[:, :, 0, 1:]  # -> [B, H, 255]
+    avg_cls_attn = cls_attn.mean(dim=1)  # -> [B, 255]
+
+    # Normalize both distributions
+    avg_cls_attn = F.softmax(avg_cls_attn, dim=-1)
+    dcp_weights = F.softmax(dcp_flat, dim=-1)
+
+    # Compute KL divergence
+    loss = F.kl_div(
+        input=torch.log(avg_cls_attn + 1e-8),
+        target=dcp_weights,
+        reduction='batchmean'
+    )
+
+    return loss
