@@ -96,7 +96,7 @@ def parse_args():
     # train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
 
-    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate")
+    parser.add_argument("--lr", type=float, default=0.05, help="learning rate")
 
     parser.add_argument("--num_epochs", type=int, default=15, help="epoch number")
 
@@ -114,11 +114,11 @@ def parse_args():
     # parser.add_argument("--backbone", type=str, default="resnet101",
     #                     help="choose backone")
 
-    # parser.add_argument("--backbone", type=str, default="transformer",
-    #                     help="choose backone")
-
-    parser.add_argument("--backbone", type=str, default="mix_transformer",
+    parser.add_argument("--backbone", type=str, default="transformer",
                         help="choose backone")
+
+    # parser.add_argument("--backbone", type=str, default="mix_transformer",
+    #                     help="choose backone")
 
     # parser.add_argument("--CAM_type", type=str, default='TransCAM',
     #                     choices=['grad', 'TransCAM', 'TsCAM'],
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
 
-    avg_meter = AverageMeter('loss', 'accuracy', 'loss_entropy', 'dcp_loss')
+    avg_meter = AverageMeter('loss', 'accuracy', 'loss_entropy', 'bg_loss')
     # max_batches = 2
 
     if args.backbone == 'vgg16:':
@@ -445,7 +445,7 @@ if __name__ == "__main__":
                 optimizer.zero_grad()
 
                 outputs = model(images)
-
+                # print(outputs.shape)
                 if isinstance(outputs, tuple):
                     attns = outputs[1]
                     last_attn = attns[-1]
@@ -454,9 +454,10 @@ if __name__ == "__main__":
                         img = img.transpose(1, 2, 0)
                         dcp_map.append(get_dark_channel(img))
                     dcp_map = np.stack(dcp_map, axis=0)
-                    # dcp_map = torch.tensor(dcp_map).to(device)
+                    dcp_map = torch.tensor(dcp_map).to(device)
 
-                    dcp_loss = dcp_guidance_loss(last_attn, dcp_map)
+                    # dcp_loss=dcp_guidance_loss(last_attn,dcp_map)
+                    bg_loss = background_suppression_loss(last_attn, dcp_map)
                     loss_entropy = attention_entropy_loss(last_attn)
                     outputs = outputs[0]
 
@@ -464,22 +465,29 @@ if __name__ == "__main__":
                 outputs = outputs.squeeze(1)
 
                 acc = calculate_accuracy(outputs, labels)
+                if epoch <= 10:
+                    # Use DCP only as a soft regularizer (early stages only)
+                    loss = criterion(outputs, labels)
+                # elif epoch<=8:
+                #     # loss = criterion(outputs, labels)+0.1*loss_entropy+1*bg_loss
+                #     loss = criterion(outputs, labels)+0.1*loss_entropy+1*bg_loss
+                else:
+                    loss = criterion(outputs, labels) + 1 * bg_loss
 
-                loss = criterion(outputs, labels) + 0.1 * loss_entropy + 0.1 * dcp_loss
                 loss.backward()
                 optimizer.step()
                 avg_meter.add({'loss': loss.item(), 'accuracy': acc,
                                'loss_entropy': loss_entropy.item(),
-                               'dcp_loss': dcp_loss.item()})
+                               'bg_loss': bg_loss.item()})
 
             data_load_time = time.time() - data_load_start
 
             print(f"Data loading time: {data_load_time:.2f} seconds")
 
-            avg_loss, avg_acc, avg_loss_entropy, avg_dcp_loss = avg_meter.get('loss', 'accuracy', 'loss_entropy',
-                                                                              'dcp_loss')
+            avg_loss, avg_acc, avg_loss_entropy, avg_bg_loss = avg_meter.get('loss', 'accuracy', 'loss_entropy',
+                                                                             'bg_loss')
             print(
-                f"Epoch [{epoch}/{args.num_epochs}], Avg cls Loss: {avg_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%,Avg loss_entropy: {avg_loss_entropy:.4f}")
+                f"Epoch [{epoch}/{args.num_epochs}], Avg cls Loss: {avg_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%,Avg loss_entropy: {avg_loss_entropy:.4f},Avg bg_loss: {avg_bg_loss:.4f}")
             train_losses.append(avg_loss)
             train_accuracies.append(avg_acc)
             scheduler.step()

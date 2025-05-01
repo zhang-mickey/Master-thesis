@@ -362,6 +362,11 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                 os.path.join(save_dir, f"fusion_cam_{img_id}.png"),
                 heatmap
             )
+            np.save(
+                os.path.join(save_dir, f"fusion_cam_{img_id}.npy"),
+                grayscale_cam
+            )
+
     print("\nScale-wise IoU Results:")
     for scale, metrics in scale_metrics.items():
         mean_iou = metrics['iou_sum'] / metrics['count']

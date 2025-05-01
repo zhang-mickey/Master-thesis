@@ -1,4 +1,3 @@
-
 # ---------------------------------------------------------------------------------------------------------------
 # Modified from https://github.com/rwightman/pytorch-image-models
 # ---------------------------------------------------------------------------------------------------------------
@@ -24,7 +23,7 @@ for some einops/einsum fun
 
 Hacked together by / Copyright 2020 Ross Wightman
 """
-import torch.nn.functional as F 
+import torch.nn.functional as F
 import torch
 import torch.nn as nn
 from functools import partial
@@ -36,15 +35,17 @@ from timm.models import resnet26d, resnet50d
 from timm.models.registry import register_model
 import os
 
+
 def _cfg(url='', **kwargs):
     return {
         'url': url,
-        'num_classes': 1, 'input_size': (3,512 , 512), 'pool_size': None,
+        'num_classes': 1, 'input_size': (3, 512, 512), 'pool_size': None,
         'crop_pct': .9, 'interpolation': 'bicubic',
         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
         'first_conv': 'patch_embed.proj', 'classifier': 'head',
         **kwargs
     }
+
 
 default_cfgs = {
     # patch models
@@ -79,6 +80,7 @@ default_cfgs = {
     'vit_base_resnet50d_224': _cfg(),
 }
 
+
 def resize_pos_embed(pos_embed_checkpoint, pos_embed_model):
     """
     Rescales position embeddings from the checkpoint to fit the model.
@@ -103,13 +105,15 @@ def resize_pos_embed(pos_embed_checkpoint, pos_embed_model):
     pos_embed_checkpoint = pos_embed_checkpoint.permute(0, 3, 1, 2)  # Shape: (1, 768, grid, grid)
 
     # Resize using bilinear interpolation
-    pos_embed_checkpoint = F.interpolate(pos_embed_checkpoint, size=(grid_size_model, grid_size_model), mode='bilinear', align_corners=False)
+    pos_embed_checkpoint = F.interpolate(pos_embed_checkpoint, size=(grid_size_model, grid_size_model), mode='bilinear',
+                                         align_corners=False)
 
     # Reshape back
     pos_embed_checkpoint = pos_embed_checkpoint.permute(0, 2, 3, 1).reshape(1, num_patches_model, embedding_dim)
 
     # Concatenate CLS token back
     return torch.cat([cls_token_embed, pos_embed_checkpoint], dim=1)
+
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -147,11 +151,11 @@ class Attention(nn.Module):
     def forward(self, x):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+        q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
-        #weights = attn if self.vis else None
+        # weights = attn if self.vis else None
         weights = attn
         attn = self.attn_drop(attn)
 
@@ -168,7 +172,8 @@ class Block(nn.Module):
         super().__init__()
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop, vis=vis)
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop,
+            vis=vis)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -185,6 +190,7 @@ class Block(nn.Module):
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
+
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
         super().__init__()
         img_size = to_2tuple(img_size)
@@ -209,6 +215,7 @@ class HybridEmbed(nn.Module):
     """ CNN Feature Map Embedding
     Extract feature map from CNN, flatten, project to embedding dim.
     """
+
     def __init__(self, backbone, img_size=224, feature_size=None, in_chans=3, embed_dim=768):
         super().__init__()
         assert isinstance(backbone, nn.Module)
@@ -243,13 +250,14 @@ class HybridEmbed(nn.Module):
 class VisionTransformer(nn.Module):
     """ Vision Transformer with support for patch or hybrid CNN input stage
     """
+
     def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
                  drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, vis=False):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
-
+        self._size = img_size // patch_size
         if hybrid_backbone is not None:
             self.patch_embed = HybridEmbed(
                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
@@ -271,8 +279,8 @@ class VisionTransformer(nn.Module):
         self.norm = norm_layer(embed_dim)
 
         # NOTE as per official impl, we could have a pre-logits representation dense layer + tanh here
-        #self.repr = nn.Linear(embed_dim, representation_size)
-        #self.repr_act = nn.Tanh()
+        # self.repr = nn.Linear(embed_dim, representation_size)
+        # self.repr_act = nn.Tanh()
 
         # Classifier head
         self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
@@ -301,13 +309,26 @@ class VisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    def forward_features(self, x):
-        B = x.shape[0]
-        x = self.patch_embed(x)
+    def prepare_tokens(self, x):
+        B, nc, h, w = x.shape
+        h, w = h // self.patch_embed.patch_size[0], w // self.patch_embed.patch_size[1]
+        x = self.patch_embed(x)  # patch linear embedding
 
-        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+        patch_pos_embed = self.pos_embed[:, 1:, :].reshape(1, self._size, self._size, -1).permute(0, 3, 1, 2)
+        patch_pos_embed = F.interpolate(patch_pos_embed, size=(h, w), mode="bicubic", align_corners=False)
+        patch_pos_embed = patch_pos_embed.reshape(1, -1, h * w).permute(0, 2, 1)
+        pos_embed = torch.cat((self.pos_embed[:, :1, :], patch_pos_embed), dim=1)
+        # add the [CLS] token to the embed patch tokens
+        cls_tokens = self.cls_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
-        x = x + self.pos_embed
+        # add positional encoding to each token
+        x = x + pos_embed
+        return x
+
+    def forward_features(self, x):
+        # B = x.shape[0]
+        # x = self.patch_embed(x)
+        x = self.prepare_tokens(x)
         x = self.pos_drop(x)
         attn_weights = []
         for blk in self.blocks:
@@ -320,10 +341,10 @@ class VisionTransformer(nn.Module):
     def forward(self, x):
         x, attn_weights = self.forward_features(x)
         x = self.head(x)
-        if self.training:
-            return x
-        else:
-            return x, attn_weights
+        # if self.training:
+        #     return x
+        # else:
+        return x, attn_weights
 
 
 def _conv_filter(state_dict, patch_size=16):
@@ -349,24 +370,18 @@ def vit_small_patch16_224(pretrained=False, **kwargs):
     return model
 
 
-
-
-
-
-
-
 @register_model
-def vit_base_patch16_224(pretrained=True, num_classes=1,**kwargs):
+def vit_base_patch16_224(pretrained=True, num_classes=1, **kwargs):
     model = VisionTransformer(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,img_size=512, 
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True, img_size=512,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     # model.default_cfg = default_cfgs['vit_base_patch16_224']
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if pretrained:
-        checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                                      "model", "jx_vit_base_p16_224-80ecf9dd.pth")
+        checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                       "pretrained", "jx_vit_base_p16_224-80ecf9dd.pth")
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         if "pos_embed" in checkpoint:
@@ -381,16 +396,6 @@ def vit_base_patch16_224(pretrained=True, num_classes=1,**kwargs):
         # Reinitialize the classification head to match `num_classes`
         model.head = nn.Linear(768, num_classes)  # Adjust to your dataset's class count
     return model
-
-
-
-
-
-
-
-
-
-
 
 
 @register_model
@@ -429,7 +434,7 @@ def vit_large_patch16_224(pretrained=False, **kwargs):
 @register_model
 def vit_large_patch16_384(pretrained=False, **kwargs):
     model = VisionTransformer(
-        img_size=384, patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4,  qkv_bias=True,
+        img_size=384, patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_large_patch16_384']
     if pretrained:
@@ -440,7 +445,7 @@ def vit_large_patch16_384(pretrained=False, **kwargs):
 @register_model
 def vit_large_patch32_384(pretrained=False, **kwargs):
     model = VisionTransformer(
-        img_size=384, patch_size=32, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4,  qkv_bias=True,
+        img_size=384, patch_size=32, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_large_patch32_384']
     if pretrained:

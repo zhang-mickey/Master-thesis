@@ -396,57 +396,58 @@ def attention_entropy_loss(attn_weights):
     return entropy
 
 
-def resize_dcp_to_patches(dcp_batch, target_num_patches=255):
+def resize_dcp_to_patches(dcp_batch, target_num_patches=256):
     """
     Resize DCP maps to match number of image patches used by vision transformer.
 
     Args:
         dcp_batch: NumPy array of shape [B, H, W]
-        target_num_patches: should match number of image patches (e.g., 255)
+        target_num_patches: should match the number of image patches (e.g., 256)
 
     Returns:
         Tensor of shape [B, target_num_patches]
     """
     B = dcp_batch.shape[0]
 
-    # Try common rectangular layouts
-    width = int(round(np.sqrt(target_num_patches)))
-    height = int(target_num_patches / width)
-
-    while height * width < target_num_patches:
-        width += 1
-        height = int(target_num_patches / width)
-
-    target_shape = (width, height)
+    # Compute side length for square layout
+    side = int(math.sqrt(target_num_patches))  # 16 for 256
+    assert side * side == target_num_patches, f"{target_num_patches} must be a perfect square"
 
     resized_maps = []
     for img in dcp_batch:
-        # Resize DCP map to match patch layout
-        resized = cv2.resize(img, target_shape, interpolation=cv2.INTER_LINEAR)
+        # Resize DCP map to match patch layout (e.g., 16x16)
+        resized = cv2.resize(img, (side, side), interpolation=cv2.INTER_LINEAR)
         resized_maps.append(resized)
 
     # Flatten spatial dimensions
-    dcp_flat = np.array(resized_maps).reshape(B, -1)  # Shape: [B, target_num_patches]
+    dcp_flat = np.array(resized_maps).reshape(B, -1)  # Shape: [B, 256]
 
     return torch.tensor(dcp_flat).float()
 
 
 def dcp_guidance_loss(model_attention, dcp_map):
+    """
+    Encourage model attention to align with DCP maps via KL divergence.
+
+    Args:
+        model_attention: tensor of shape [B, H, N, N], where N = 256
+        dcp_map: tensor of shape [B, H_orig, W_orig] → flattened & normalized to [B, 256]
+    """
     B, H, N, _ = model_attention.shape  # e.g., [8, 8, 256, 256]
-    target_num_patches = N - 1  # Exclude CLS token → 255
+    # Resize DCP maps to match patch count (now 256 patches)
+    dcp_flat = resize_dcp_to_patches(dcp_map, target_num_patches=N).to(model_attention.device)
 
-    # Resize DCP maps accordingly
-    dcp_flat = resize_dcp_to_patches(dcp_map, target_num_patches=target_num_patches).to(model_attention.device)
-
-    # Extract CLS attention only
-    cls_attn = model_attention[:, :, 0, 1:]  # -> [B, H, 255]
-    avg_cls_attn = cls_attn.mean(dim=1)  # -> [B, 255]
+    cls_attn = model_attention[:, :, 0, :]  # -> shape [B, H, 256]
+    avg_cls_attn = cls_attn.mean(dim=1)  # -> [B, 256]
 
     # Normalize both distributions
     avg_cls_attn = F.softmax(avg_cls_attn, dim=-1)
     dcp_weights = F.softmax(dcp_flat, dim=-1)
 
-    # Compute KL divergence
+    print(f"avg_cls_attn: {avg_cls_attn.shape}")
+    print(f"dcp_weights: {dcp_weights.shape}")
+
+    # Now shapes match!
     loss = F.kl_div(
         input=torch.log(avg_cls_attn + 1e-8),
         target=dcp_weights,
@@ -454,3 +455,75 @@ def dcp_guidance_loss(model_attention, dcp_map):
     )
 
     return loss
+
+
+
+
+def background_suppression_loss(model_attention, dcp_map):
+    """
+    Args:
+        [B, H, N, N] → [Batch_Size, Num_Heads, Num_Patches + 1, Num_Patches + 1]
+        model_attention: [B, H, N, N] → [8, 12, 1025, 1025]
+        dcp_map: [B, C, H_orig, W_orig] OR [B, H_orig, W_orig]
+
+    Returns:
+        suppression_loss: scalar
+    """
+
+    B, H, N, _ = model_attention.shape  # torch.Size([8, 12, 1025, 1025])
+
+    # In most ViT-style models: The first token (index 0) is the [CLS] token
+    cls_attn = model_attention[:, :, 0, :]  # [B, H, N]
+    avg_attn = cls_attn.mean(dim=1)  # [B, N]
+    avg_attn = avg_attn[:, 1:]  # [B, 1024]
+    # Reshape attention to 2D layout
+    side = int(N ** 0.5)
+    attn_2d = avg_attn.view(B, side, side)
+
+    # Resize DCP map to match attention resolution (16x16)
+    dcp_resized = F.interpolate(
+        dcp_map.unsqueeze(1),
+        size=(side, side),
+        mode='bilinear',
+        align_corners=False
+    ).squeeze(1)
+
+    # Normalize both maps
+    attn_norm = normalize_map(attn_2d)  # Model's attention map
+    dcp_norm = normalize_map(dcp_resized)  # DCP map
+
+    bg_mask = 1.0 - dcp_norm  # High values = clean background → suppress here
+
+    # Suppress model attention where bg_mask is high
+    suppression_loss = (attn_norm * bg_mask).mean()
+
+    return suppression_loss
+
+
+def normalize_map(x):
+    """
+    Normalize tensor values between 0 and 1.
+
+    Works for:
+        - 2D: [B, N]
+        - 3D: [B, H, W]
+        - 4D: [B, C, H, W] (e.g., feature maps)
+    """
+    if len(x.shape) == 4:
+        B, C, H, W = x.shape
+        x_min = x.view(B, -1).min(dim=1, keepdim=True)[0]
+        x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(B, 1, 1, 1)) / (x_max - x_min + 1e-8).view(B, 1, 1, 1)
+    elif len(x.shape) == 3:
+        B, H, W = x.shape
+        x_min = x.view(B, -1).min(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(B, 1, 1)) / (x.view(B, -1).max(dim=1, keepdim=True)[0] - x_min + 1e-8).view(B, 1, 1)
+    elif len(x.shape) == 2:
+        B, N = x.shape
+        x_min = x.unsqueeze(-1).unsqueeze(-1)  # fake spatial dims
+        x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min) / (x_max - x_min + 1e-8)
+    else:
+        raise ValueError("Input tensor must be 2D, 3D, or 4D")
+
+    return x_norm

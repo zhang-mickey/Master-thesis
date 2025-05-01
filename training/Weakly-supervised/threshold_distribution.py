@@ -8,6 +8,20 @@ import argparse
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="threshold_experiment")
+
+    parser.add_argument("--threshold", type=float, default=0.2, help="threshold to pesudo label")
+
+    parser.add_argument("--model_cam", type=str, default="transformer", help="threshold to pesudo label")
+
+    parser.add_argument("--scale_factor", type=int, default=1, help="scale_factor for crf")
+
+    parser.add_argument("--iteration", type=int, default=5, help="iteration for crf")
+
+    return parser.parse_args()
+
+
 def crf_inference(img, probs, t=10, scale_factor=1, labels=1):
     import pydensecrf.densecrf as dcrf
     from pydensecrf.utils import unary_from_softmax
@@ -23,30 +37,19 @@ def crf_inference(img, probs, t=10, scale_factor=1, labels=1):
     unary = np.ascontiguousarray(unary)
 
     d.setUnaryEnergy(unary)
-    d.addPairwiseGaussian(sxy=3 / scale_factor, compat=2)
+    d.addPairwiseGaussian(sxy=3 / scale_factor, compat=0.5)
     # CRF is using the original image for pairwise potential computation.
-    d.addPairwiseBilateral(sxy=80 / scale_factor, srgb=5, rgbim=np.copy(img), compat=5)
+    d.addPairwiseBilateral(sxy=80 / scale_factor, srgb=5, rgbim=np.copy(img), compat=1)
     Q = d.inference(t)
 
     return np.array(Q).reshape((n_labels, h, w))
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="threshold_experiment")
-
-    parser.add_argument("--threshold", type=float, default=0.3, help="threshold to pesudo label")
-
-    parser.add_argument("--model_cam", type=str, default="resnet101", help="threshold to pesudo label")
-
-    return parser.parse_args()
-
-
 def compute_iou(pred_mask, gt_mask):
     intersection = np.logical_and(pred_mask, gt_mask).sum()
     union = np.logical_or(pred_mask, gt_mask).sum()
-    if union == 0:
-        return 1.0 if intersection == 0 else 0.0
-    return intersection / union
+    iou = intersection / (union + 1e-8)
+    return iou
 
 
 def find_best_threshold_iou(cam, gt_mask):
@@ -71,7 +74,7 @@ if __name__ == "__main__":
 
     cam_dir = os.path.join(project_root, "result/transformer_GradCAM_0.3_15_pseudo_labels/")
     # cam_dir=os.path.join(project_root, "result/resnet101_GradCAM_0.3_10_pseudo_labels/")
-
+    pseudo_dir = os.path.join(project_root, "result/transformer_GradCAM_0.3_15_pseudo_labels/")
     mask_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/")
 
     print("mask_path", mask_dir)
@@ -85,18 +88,20 @@ if __name__ == "__main__":
 
         img_path = os.path.join(image_dir, img_name)
         cam_path = os.path.join(cam_dir, f"cam_{img_name}")
-
+        pseudo_path = os.path.join(pseudo_dir, f"pseudo_label_{img_name}")
         mask_path = os.path.join(mask_dir, f"mask_{img_name}") if mask_dir else None
         if os.path.exists(cam_path) and os.path.exists(mask_path):
             samples.append({
                 'image': img_path,
                 'cam': cam_path,
+                'pseudo': pseudo_path,
                 'mask': mask_path if mask_path and os.path.exists(mask_path) else None,
             })
 
     optimal_thresholds = []
     mIOU = []
     fixed_mIOU = []
+    pseudo_mIOU = []
     crf_mIOU = []
     crf_fixed_mIOU = []
     for i in range(len(samples)):
@@ -104,7 +109,8 @@ if __name__ == "__main__":
         orig_img = cv2.imread(sample['image'])
         orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
 
-        cam = cv2.imread(sample['cam'], cv2.IMREAD_GRAYSCALE) / 255.0  # normalize to [0, 1]
+        cam = cv2.imread(sample['cam'], cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0  # normalize to [0, 1]
+        pseudo_label = cv2.imread(sample['pseudo'], cv2.IMREAD_GRAYSCALE) / 255.0  # normalize to [0, 1]
 
         gt_mask = cv2.imread(sample['mask'], cv2.IMREAD_GRAYSCALE)
         gt_mask = (gt_mask > 127).astype(np.uint8)  # Ensure it's binary
@@ -114,17 +120,19 @@ if __name__ == "__main__":
         optimal_thresholds.append(best_thresh)
 
         # Calculate IoU with fixed threshold of 0.3
-
         fixed_pred = (cam >= args.threshold).astype(np.uint8)
         fixed_iou = compute_iou(fixed_pred, gt_mask)
         fixed_mIOU.append(fixed_iou)
+
+        pseudo_iou = compute_iou(pseudo_label, gt_mask)
+        pseudo_mIOU.append(pseudo_iou)
 
         probs = np.zeros((2, cam.shape[0], cam.shape[1]), dtype=np.float32)
         probs[0] = 1 - cam  # Background probability
         probs[1] = cam  # Foreground probability
 
         # Run CRF inference
-        refined_probs = crf_inference(orig_img, probs, t=10, scale_factor=1, labels=2)
+        refined_probs = crf_inference(orig_img, probs, t=args.iteration, scale_factor=1, labels=2)
         refined_cam = refined_probs[1]  # Get foreground probability
 
         # Find best threshold with CRF
@@ -159,17 +167,19 @@ if __name__ == "__main__":
             axes[3].axis('off')
 
             plt.tight_layout()
-            os.makedirs("result/visualization/crf_resnet101", exist_ok=True)
-            plt.savefig(f"result/visualization/crf_resnet101/sample_{i}.png")
+            os.makedirs("result/visualization/crf_transformer", exist_ok=True)
+            plt.savefig(f"result/visualization/crf_transformer/sample_{i}.png")
             plt.close()
 
     mean_iou = np.mean(mIOU)
     fixed_mean_iou = np.mean(fixed_mIOU)
+    pseudp_mean_iou = np.mean(pseudo_mIOU)
     crf_mean_iou = np.mean(crf_mIOU)
     crf_fixed_mean_iou = np.mean(crf_fixed_mIOU)
 
     print(f"Mean IoU with (optimal threshold): {mean_iou:.4f}")
     print(f"Mean IoU with (fixed threshold=0.3): {fixed_mean_iou:.4f}")
+    print(f"Mean IoU with (pseudo label): {pseudp_mean_iou:.4f}")
     print(f"Mean IoU with CRF (optimal threshold): {crf_mean_iou:.4f}")
     print(f"Mean IoU with CRF (fixed threshold=0.3): {crf_fixed_mean_iou:.4f}")
     print(f"Mean Threshold: {np.mean(optimal_thresholds):.4f}")
@@ -181,7 +191,7 @@ if __name__ == "__main__":
     # Median Threshold: 0.4000
 
     plt.figure(figsize=(12, 6))
-    methods = ['Original (Optimal)', 'Original (Fixed=0.3)', 'CRF (Optimal)', 'CRF (Fixed=0.3)']
+    methods = ['Original (Optimal)', 'Original (Fixed=0.2)', 'CRF (Optimal)', 'CRF (Fixed=0.3)']
     ious = [mean_iou, fixed_mean_iou, crf_mean_iou, crf_fixed_mean_iou]
     colors = ['lightcoral', 'salmon', 'lightblue', 'skyblue']
 
