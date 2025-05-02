@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torchvision import transforms, models
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import random_split
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 import time
@@ -96,9 +97,10 @@ def parse_args():
     # train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
 
-    parser.add_argument("--lr", type=float, default=0.05, help="learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
+    parser.add_argument("--warmup_lr", type=float, default=0.005, help="learning rate")
 
-    parser.add_argument("--num_epochs", type=int, default=15, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
 
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
@@ -278,7 +280,15 @@ if __name__ == "__main__":
     model = model.to(device)
     model.train()
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    # warmup_scheduler=LinearLR(optimizer, start_factor=args.warmup_lr/args.lr, total_iters=5)
+    # main_scheduler=CosineAnnealingLR(optimizer, T_max=args.num_epochs-5)
+
+    # scheduler = SequentialLR(
+    # optimizer,
+    # schedulers=[warmup_scheduler, main_scheduler],
+    # milestones=[5]  # Switch to main_scheduler after epoch 5
+    # )
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
 
     avg_meter = AverageMeter('loss', 'accuracy', 'loss_entropy', 'bg_loss')
@@ -431,7 +441,8 @@ if __name__ == "__main__":
 
     elif args.backbone == 'transformer' or args.backbone == 'mix_transformer' or args.backbone == 'resnet101' or args.backbone == 'resnet38d':
 
-        train_losses = []
+        cls_loss_history = []
+        bg_loss_history = []
         train_accuracies = []
         for epoch in range(1, (args.num_epochs + 1)):
 
@@ -465,15 +476,15 @@ if __name__ == "__main__":
                 outputs = outputs.squeeze(1)
 
                 acc = calculate_accuracy(outputs, labels)
-                if epoch <= 10:
-                    # Use DCP only as a soft regularizer (early stages only)
-                    loss = criterion(outputs, labels)
-                # elif epoch<=8:
-                #     # loss = criterion(outputs, labels)+0.1*loss_entropy+1*bg_loss
-                #     loss = criterion(outputs, labels)+0.1*loss_entropy+1*bg_loss
-                else:
-                    loss = criterion(outputs, labels) + 1 * bg_loss
-
+                # if epoch<=10:
+                #     #Use DCP only as a soft regularizer (early stages only)
+                #     loss = criterion(outputs, labels)
+                # # elif epoch<=8:
+                # #     # loss = criterion(outputs, labels)+0.1*loss_entropy+1*bg_loss
+                # #     loss = criterion(outputs, labels)+0.1*loss_entropy+1*bg_loss
+                # else:
+                #     loss = criterion(outputs, labels)+1*bg_loss
+                loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
                 avg_meter.add({'loss': loss.item(), 'accuracy': acc,
@@ -488,7 +499,9 @@ if __name__ == "__main__":
                                                                              'bg_loss')
             print(
                 f"Epoch [{epoch}/{args.num_epochs}], Avg cls Loss: {avg_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%,Avg loss_entropy: {avg_loss_entropy:.4f},Avg bg_loss: {avg_bg_loss:.4f}")
-            train_losses.append(avg_loss)
+
+            cls_loss_history.append(avg_loss)
+            bg_loss_history.append(avg_bg_loss)
             train_accuracies.append(avg_acc)
             scheduler.step()
 
@@ -501,7 +514,7 @@ if __name__ == "__main__":
             f"loss_{args.backbone}_{args.num_epochs}_{os.path.basename(args.save_visualization_path)}"
         )
 
-        plot_loss_accuracy(train_losses, train_accuracies, save_loss_path)
+        plot_loss_accuracy(cls_loss_history, bg_loss_history, train_accuracies, save_loss_path, args.lr)
 
         torch.save(model.state_dict(), save_path)
         print("Training complete! Model saved.")
@@ -561,19 +574,19 @@ if __name__ == "__main__":
         # print(f"Confusion Matrix:\n{conf_matrix}")
 
         # Determine target layers for CAM
-        if args.backbone == "resnet101":
-            target_layers = [model.layer4[-1]]  # Last layer of layer4
-        elif args.backbone == "transformer":
-            target_layers = [model.blocks[-1].norm1]  # Last transformer block
-        elif args.backbone == "mix_transformer":
-            target_layers = [model.blocks[-1].norm1]  # Last transformer block
-        elif args.backbone == "resnet38d":
-            target_layers = [model.dropout7]
+        # if args.backbone == "resnet101":
+        #     target_layers = [model.layer4[-1]]  # Last layer of layer4
+        # elif args.backbone == "transformer":
+        #     target_layers = [model.blocks[-1].norm1]  # Last transformer block
+        # elif args.backbone == "mix_transformer":
+        #     target_layers = [model.blocks[-1].norm1]  # Last transformer block
+        # elif args.backbone == "resnet38d":
+        #     target_layers = [model.dropout7]
 
-        save_cam_path = os.path.join(
-            os.path.dirname(args.save_cam_path),
-            f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}"
-        )
+        # save_cam_path = os.path.join(
+        #     os.path.dirname(args.save_cam_path),
+        #     f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}"
+        # )
 
         # if model is None:
         #     print("ERROR: Model is None before CAM generation!")
