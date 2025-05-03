@@ -13,11 +13,20 @@ def parse_args():
 
     parser.add_argument("--threshold", type=float, default=0.3, help="threshold to pesudo label")
 
-    parser.add_argument("--model_cam", type=str, default="transformer", help="threshold to pesudo label")
+    parser.add_argument("--backbone", type=str, default="transformer", help="threshold to pesudo label")
 
     parser.add_argument("--scale_factor", type=int, default=1, help="scale_factor for crf")
 
-    parser.add_argument("--iteration", type=int, default=10, help="iteration for crf")
+    parser.add_argument("--iteration", type=int, default=5, help="iteration for crf")
+
+    parser.add_argument("--save_pseudo_labels_path", type=str,
+                        default=os.path.join(project_root, "result/crf_pseudo_labels"),
+                        help="Path to save the pseudo labels")
+    parser.add_argument("--CAM_type", type=str, default='GradCAM',
+                        choices=['grad', 'TransCAM', 'TsCAM'],
+                        help="CAM type")
+
+    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
 
     return parser.parse_args()
 
@@ -31,15 +40,15 @@ def crf_inference(img, probs, t=10, scale_factor=1, labels=1):
     n_labels = labels
 
     d = dcrf.DenseCRF2D(w, h, n_labels)
-    print(probs.shape)  # Should be (n_labels, H, W)
-    print(probs.max(), probs.min())  # Make sure it's a softmax output
+    # print(probs.shape)  # Should be (n_labels, H, W)
+    # print(probs.max(), probs.min())  # Make sure it's a softmax output
     unary = unary_from_softmax(probs)
     unary = np.ascontiguousarray(unary)
 
     d.setUnaryEnergy(unary)
-    d.addPairwiseGaussian(sxy=3 / scale_factor, compat=3)
+    d.addPairwiseGaussian(sxy=3 / scale_factor, compat=5)
     # CRF is using the original image for pairwise potential computation.
-    d.addPairwiseBilateral(sxy=80 / scale_factor, srgb=10, rgbim=np.copy(img), compat=10)
+    d.addPairwiseBilateral(sxy=60 / scale_factor, srgb=5, rgbim=np.copy(img), compat=15)
     Q = d.inference(t)
 
     return np.array(Q).reshape((n_labels, h, w))
@@ -80,6 +89,11 @@ if __name__ == "__main__":
     pseudo_dir = os.path.join(project_root, "final_model/transformer_GradCAM_0.3_10_pseudo_labels/")
     mask_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/")
 
+    save_pseudo_labels_path = os.path.join(
+        os.path.dirname(args.save_pseudo_labels_path),
+        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_pseudo_labels_path)}"
+    )
+    os.makedirs(save_pseudo_labels_path, exist_ok=True)
     print("mask_path", mask_dir)
     print("cam_path", cam_dir)
 
@@ -99,6 +113,7 @@ if __name__ == "__main__":
             samples.append({
                 'image': img_path,
                 'cam': cam_path,
+                'image_id': base_name,
                 # 'pseudo': pseudo_path,
                 'mask': mask_path if mask_path and os.path.exists(mask_path) else None,
             })
@@ -109,16 +124,21 @@ if __name__ == "__main__":
     # pseudo_mIOU=[]
     crf_mIOU = []
     crf_fixed_mIOU = []
+    # for i in range(15):
     for i in range(len(samples)):
         sample = samples[i]
+
+        img_id = sample['image_id']
+        print("image_id", img_id)
         orig_img = cv2.imread(sample['image'])
         orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
-        cam = np.load(sample['cam'])
         # cam = cv2.imread(sample['cam'], cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0  # normalize to [0, 1]
         # pseudo_label=cv2.imread(sample['pseudo'], cv2.IMREAD_GRAYSCALE) / 255.0  # normalize to [0, 1]
-
+        # print("CAM max:",cam.max())
+        # print("CAM min:",cam.min())
+        cam = np.load(sample['cam'])
         gt_mask = cv2.imread(sample['mask'], cv2.IMREAD_GRAYSCALE)
-        gt_mask = (gt_mask > 127).astype(np.uint8)  # Ensure it's binary
+        gt_mask = (gt_mask > 127).astype(np.uint8)
         # Calculate IoU with optimal threshold
         best_thresh, best_iou = find_best_threshold_iou(cam, gt_mask)
         mIOU.append(best_iou)
@@ -136,8 +156,10 @@ if __name__ == "__main__":
 
         probs[0] = 1 - cam  # Background probability
         probs[1] = cam  # Foreground probability
-        probs = np.power(probs, 0.5)
+        probs[0] = np.power(probs[0], 48)
         probs = probs / (probs.sum(axis=0, keepdims=True) + 1e-8)
+        print("power CAM max:", probs[1].max())
+        print("power CAM min:", probs[1].min())
         # Run CRF inference
         refined_probs = crf_inference(orig_img, probs, t=args.iteration, scale_factor=1, labels=2)
 
@@ -151,7 +173,7 @@ if __name__ == "__main__":
         crf_fixed_iou = compute_iou(crf_fixed_pred, gt_mask)
         crf_fixed_mIOU.append(crf_fixed_iou)
 
-        if i < 6:  # Only visualize first 5 samples to avoid too many plots
+        if i < 16:
             fig, axes = plt.subplots(1, 4, figsize=(25, 5))
 
             # Original image
@@ -178,7 +200,10 @@ if __name__ == "__main__":
             os.makedirs("result/visualization/crf_transformer", exist_ok=True)
             plt.savefig(f"result/visualization/crf_transformer/sample_{i}.png")
             plt.close()
-
+        np.save(
+            os.path.join(save_pseudo_labels_path, f"fusion_cam_{img_id}.npy"),
+            refined_cam
+        )
     mean_iou = np.mean(mIOU)
     fixed_mean_iou = np.mean(fixed_mIOU)
     # pseudp_mean_iou=np.mean(pseudo_mIOU)
