@@ -11,4 +11,5 @@ lib/dataset/frames/
 *.jpg
 *.png
 *.zip
+*.npy
 smoke-segmentation.v5i.coco-segmentation/
