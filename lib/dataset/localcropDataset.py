@@ -16,13 +16,15 @@ class LocalCropDataset(Dataset):
                  transform=None,
                  mask_transform=None,
                  img_size=(512, 512),
-                 local_crop_size=96):
+                 local_crop_size=96,
+                 test=False):
 
         self.img_size = img_size
         self.samples = []
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.non_smoke_dir = non_smoke_dir
+        self.test = test
 
         # # Load smoke images and masks
         # print("Image Dir:", self.image_dir)
@@ -59,12 +61,12 @@ class LocalCropDataset(Dataset):
         print("len(self.samples)", len(self.samples))
 
         self.flip_and_color_jitter = transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomHorizontalFlip(p=0.1),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
-                p=0.8
+                p=0.1
             ),
-            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomGrayscale(p=0.1),
         ])
 
         self.transform = transform or transforms.Compose([
@@ -117,8 +119,14 @@ class LocalCropDataset(Dataset):
         else:
             mask = Image.new('L', img.size, 0)  # Black mask for non-smoke
 
-        if self.transform and sample['is_smoke']:
-            mask = self.mask_transform(mask)
+        mask = self.mask_transform(mask)
+
+        # label = sample['label']
+        # one_hot_label = torch.zeros(2, dtype=torch.float)
+        # one_hot_label[label] = 1.0
+        # return image, one_hot_label, os.path.splitext(os.path.basename(sample['image']))[0], mask, crops
 
         return image, torch.tensor(sample['label'], dtype=torch.long), \
         os.path.splitext(os.path.basename(sample['image']))[0], mask, crops
+
+

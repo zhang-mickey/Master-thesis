@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 from lib.network.ToCo_decoder_conv_head import *
 from . import ToCo_encoder as encoder
+from lib.network.ToCo_encoder.vit import *
 
 """
 Borrow from https://github.com/facebookresearch/dino
@@ -53,6 +54,7 @@ class ToCo_network(nn.Module):
         self.init_momentum = init_momentum
 
         self.encoder = getattr(encoder, backbone)(pretrained=pretrained, aux_layer=aux_layer)
+        # self.encoder = vit_base_patch16_384(pretrained=pretrained, aux_layer=aux_layer)
 
         self.proj_head = CTCHead(in_dim=self.encoder.embed_dim, out_dim=1024)
         self.proj_head_t = CTCHead(in_dim=self.encoder.embed_dim, out_dim=1024, )
@@ -90,11 +92,13 @@ class ToCo_network(nn.Module):
         param_groups = [[], [], [], []]  # backbone; backbone_norm; cls_head; seg_head;
 
         for name, param in list(self.encoder.named_parameters()):
-
-            if "norm" in name:
-                param_groups[1].append(param)
+            if "blocks.0" in name or "patch_embed" in name:  # 冻结前几层
+                param.requires_grad = False
             else:
-                param_groups[0].append(param)
+                if "norm" in name:
+                    param_groups[1].append(param)
+                else:
+                    param_groups[0].append(param)
 
         param_groups[2].append(self.classifier.weight)
         param_groups[2].append(self.aux_classifier.weight)
@@ -263,15 +267,17 @@ def crop_from_roi_neg(images, roi_mask=None, crop_num=8, crop_size=96):
     return crops, flags
 
 
-def cam_to_label(cam, cls_label,
+def cam_to_label(cam, cls_labels,
                  # img_box=None,
                  bkg_thre=None,
                  high_thre=None, low_thre=None,
                  ignore_mid=False,
                  ignore_index=None):
+    if cls_labels.ndim == 1:
+        cls_labels = F.one_hot(cls_labels, num_classes=2).float()
     b, c, h, w = cam.shape
     # pseudo_label = torch.zeros((b,h,w))
-    cls_label_rep = cls_label.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
+    cls_label_rep = cls_labels.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
     ## Mask CAMs with class labels
     valid_cam = cls_label_rep * cam
     # print("valid_cam_value",valid_cam.max(),valid_cam.min())
@@ -280,7 +286,7 @@ def cam_to_label(cam, cls_label,
     # _pseudo_label += 1
     _pseudo_label[cam_value <= bkg_thre] = 0
 
-    print("_pseudo_label", np.unique(_pseudo_label.cpu().numpy()))
+    # print("_pseudo_label",np.unique(_pseudo_label.cpu().numpy()))
 
     # print("cam_value",cam_value.max(),cam_value.min())
     # if ignore_index is not None:
@@ -414,3 +420,12 @@ def scores(label_trues, label_preds, num_classes=1):
         "miou": mean_iu,
         "iou": cls_iu,
     }
+
+
+def get_valid_cam(cam, cls_label):
+    b, c, h, w = cam.shape
+    # pseudo_label = torch.zeros((b,h,w))
+    cls_label_rep = cls_label.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
+    valid_cam = cls_label_rep * cam
+
+    return valid_cam

@@ -54,7 +54,7 @@ for mask_name in sorted(os.listdir(non_smoke_pseudo_dir)):
     })
 print(len(non_smoke))
 
-text = clip.tokenize(["smoke particles  in a dark region", "a solid black background with no visible texture"]).to(device)
+text = clip.tokenize(["small gray smoke particles surrounded by large black region", "half black half sky"]).to(device)
 max_samples = len(samples)
 sum_prob=0
 smoke_sim=0

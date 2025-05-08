@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from torch.utils.data import random_split
 import sklearn.metrics as metrics
 
+from segment_anything import sam_model_registry, SamPredictor
+
 # Get the absolute path of the project root
 project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
 
@@ -36,19 +38,6 @@ from lib.utils.CRF import *
 from lib.utils.PAR import *
 from lib.utils.image_mask_visualize import *
 from lib.network.ToCo_model import *
-
-
-class PolyLR(_LRScheduler):
-    def __init__(self, optimizer, max_iters, iter_warmup=0.0, power=0.9, last_epoch=-1, min_lr=1e-6):
-        self.power = power
-        self.max_iters = max_iters
-        self.iter_warmup = int(iter_warmup)
-        self.min_lr = min_lr
-        super(PolyLR, self).__init__(optimizer, last_epoch)
-
-    def get_lr(self):
-        return [max(base_lr * (1 - self.last_epoch / self.max_iters) ** self.power, self.min_lr)
-                for base_lr in self.base_lrs]
 
 
 def parse_args():
@@ -104,7 +93,7 @@ def parse_args():
     parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
     parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
-    parser.add_argument("--lr", type=float, default=5e-4, help="initial learning rate")
+    parser.add_argument("--lr", type=float, default=1e-6, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=0.1, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=1e-4, help="initial learning rate") converge but misaligned
@@ -176,7 +165,6 @@ if __name__ == "__main__":
         train_dataset = LocalCropDataset(
             args.crop_smoke_image_folder,
             args.crop_mask_folder,
-            args.crop_non_smoke_folder,
             transform=image_transform,
             mask_transform=mask_transform,
             local_crop_size=args.local_crop_size,
@@ -215,8 +203,6 @@ if __name__ == "__main__":
 
         print(f"Train size: {len(train_subset)} |Val size: {len(val_subset)} |Test size: {len(test_subset)}")
 
-    # ---- Model ----
-
     model = choose_backbone(args.backbone)
     model.to(device)
 
@@ -232,17 +218,7 @@ if __name__ == "__main__":
 
     par = PAR(num_iter=10, dilations=[1, 2, 4, 8, 12, 24]).cuda()
 
-    param_groups = model.get_param_groups()
-
-    optimizer = optim.AdamW(
-        params=[
-            {'params': param_groups[0], 'lr': args.lr},
-            {'params': param_groups[1], 'lr': args.lr},
-            {'params': param_groups[2], 'lr': args.lr * 10},
-            {'params': param_groups[3], 'lr': args.lr * 10},
-        ],
-        lr=args.lr)
-    # optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     # optimizer = optim.SGD(
     #             # params=[
     #             #     {'params': model.backbone.parameters(), 'lr': args.lr / 10},
@@ -473,9 +449,6 @@ if __name__ == "__main__":
                                          bkg_thre=args.background_threshold, high_thre=args.high_threshold,
                                          low_thre=args.low_threshold, ignore_index=args.ignore_index)
 
-            # cls_pred = (cls > 0).type(torch.int16)
-            # _f1 = metrics.f1_score(cls_labels.cpu().numpy().reshape(-1), cls_pred.cpu().numpy().reshape(-1))
-            # avg_meter.add({"cls_score": _f1})
 
             resized_segs = F.interpolate(segs, size=masks.shape[1:], mode='bilinear', align_corners=False)
 
@@ -484,10 +457,6 @@ if __name__ == "__main__":
             gts += list(masks.cpu().numpy().astype(np.int16))
             cams_aux += list(cam_label_aux.cpu().numpy().astype(np.int16))
 
-        # print("gts:", np.unique(gts))
-        # print("preds:", np.unique(preds))
-        # print("cams:", np.unique(cams))
-        # print("cams_aux:", np.unique(cams_aux))
         cls_score = avg_meter.pop('cls_score')
         seg_score = scores(gts, preds, num_classes=2)
         cam_score = scores(gts, cams, num_classes=2)
