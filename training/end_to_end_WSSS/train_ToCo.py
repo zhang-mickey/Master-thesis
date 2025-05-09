@@ -103,8 +103,8 @@ def parse_args():
     parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
     parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
-    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
-    parser.add_argument("--lr", type=float, default=5e-4, help="initial learning rate")
+    parser.add_argument("--num_epochs", type=int, default=20, help="epoch number")
+    parser.add_argument("--lr", type=float, default=5e-3, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=0.1, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=1e-4, help="initial learning rate") converge but misaligned
@@ -120,11 +120,11 @@ def parse_args():
     parser.add_argument("--backbone", type=str, default="ToCo",
                         help="choose backone")
     parser.add_argument("--ignore_index", default=255, type=int, help="random index")
-    parser.add_argument('--high_threshold', default=0.3, type=float,
+    parser.add_argument('--high_threshold', default=0.65, type=float,
                         help='high threshold')
-    parser.add_argument('--low_threshold', default=0.05, type=float,
+    parser.add_argument('--low_threshold', default=0.3, type=float,
                         help='low threshold')
-    parser.add_argument('--background_threshold', default=0.05, type=float,
+    parser.add_argument('--background_threshold', default=0.3, type=float,
                         help='background threshold')
 
     parser.add_argument("--cam_scales", default=(1.0, 0.5, 1.5),
@@ -237,6 +237,7 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(
         params=[
             {'params': param_groups[0], 'lr': args.lr},
+            # norm layers
             {'params': param_groups[1], 'lr': args.lr},
             {'params': param_groups[2], 'lr': args.lr * 10},
             {'params': param_groups[3], 'lr': args.lr * 10},
@@ -300,9 +301,16 @@ if __name__ == "__main__":
             #     cls_labels=F.one_hot(cls_labels, num_classes=2).float()
             cls = cls[:, 1]
             cls_aux = cls_aux[:, 1]
-            cls_loss = F.binary_cross_entropy_with_logits(cls, cls_labels.float())
+            pos_weight = torch.tensor([1.0]).to(device)
+            cls_loss = F.binary_cross_entropy_with_logits(
+                cls,
+                cls_labels.float(),
+                pos_weight=pos_weight)
 
-            cls_loss_aux = F.multilabel_soft_margin_loss(cls_aux, cls_labels.float())
+            cls_loss_aux = F.binary_cross_entropy_with_logits(
+                cls_aux,
+                cls_labels.float(),
+                pos_weight=pos_weight)
 
             ctc_loss = CTC_loss(out_s, out_t, flags)
 
@@ -326,7 +334,7 @@ if __name__ == "__main__":
                 low_thre=args.low_threshold,
                 ignore_index=args.ignore_index)
 
-            if epoch <= 5:
+            if epoch <= 10:
                 refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam_aux,
                                                                cls_labels=cls_labels,
                                                                high_thre=args.high_threshold,
@@ -390,10 +398,14 @@ if __name__ == "__main__":
             #     loss = 1.0 * cls_loss + 1.0 * cls_loss_aux+0.1 * seg_loss
             # else:
             #     loss=1.0 * cls_loss + 1.0 * cls_loss_aux + 0.1 * seg_loss + args.w_reg * reg_loss
-            if epoch <= 5:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux
+            if epoch <= 10:
+                # cls_loss_aux too dominant
+                loss = 1.0 * cls_loss + 0.01 * cls_loss_aux
             else:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.1 * seg_loss
+                seg_weight = min(0.1 * (epoch - 10), 1.0) if epoch > 10 else 0.0  # linear growth
+
+                loss = 1.0 * cls_loss + 0.01 * cls_loss_aux + seg_weight * seg_loss
+
             cls_pred = (cls > 0).type(torch.int16)
             cls_score = metrics.f1_score(cls_labels.cpu().numpy().flatten(), cls_pred.cpu().numpy().flatten())
 

@@ -1,470 +1,223 @@
-from this import d
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import json
-import cv2
 import numpy as np
-import sys
-import os, argparse
-from torchvision import transforms, models
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
-from torch.optim.lr_scheduler import _LRScheduler, StepLR
-from torch.utils.data import WeightedRandomSampler
 import matplotlib.pyplot as plt
-from torch.utils.data import random_split
-import sklearn.metrics as metrics
+import seaborn as sns
+import os
+import cv2
+import argparse
+import torch
+from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
-from segment_anything import sam_model_registry, SamPredictor
-
-# Get the absolute path of the project root
-project_root = os.path.abspath(os.path.dirname(__file__) + "/../..")
-
-# Add the project root to sys.path
-sys.path.append(project_root)
-from lib.dataset.cropDataset import *
-from lib.dataset.SmokeDataset import *
-from lib.dataset.augDataset import *
-from lib.dataset.localcropDataset import *
-from lib.network.backbone import choose_backbone
-from lib.utils.splitdataset import *
-from lib.utils.transform import *
-from lib.network import *
-from lib.loss.loss import *
-from inference.inference import *
-from lib.utils.metrics import *
-from lib.utils.CRF import *
-from lib.utils.PAR import *
-from lib.utils.image_mask_visualize import *
-from lib.network.ToCo_model import *
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Supervised learning")
-    # Dataset
-    parser.add_argument("--json_path", type=str,
-                        default=os.path.join(project_root,
-                                             "smoke-segmentation.v5i.coco-segmentation/test/_annotations.coco.json"),
-                        help="Path to COCO annotations JSON file")
+    parser = argparse.ArgumentParser(description="threshold_experiment")
 
-    parser.add_argument("--image_folder", type=str,
-                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/test/"),
-                        help="Path to the image dataset folder")
+    parser.add_argument("--threshold", type=float, default=0.3, help="threshold to pesudo label")
 
-    parser.add_argument("--save_model_path", type=str,
-                        default=os.path.join(project_root, "model/model_supervised.pth"),
-                        help="Path to save the trained model")
+    parser.add_argument("--backbone", type=str, default="transformer", help="threshold to pesudo label")
 
-    parser.add_argument("--supervised_crf_mask_path", type=str,
-                        default=os.path.join(project_root, "result/supervised/crf_mask"),
-                        help="Path to save the CRF cam")
+    parser.add_argument("--scale_factor", type=int, default=1, help="scale_factor for crf")
 
-    parser.add_argument("--smoke5k", type=bool, default=False, help="use smoke5k or not")
-    parser.add_argument("--smoke5k_path", type=str, default=os.path.join(project_root, "SMOKE5K/train/"),
-                        help="path to smoke5k")
+    parser.add_argument("--iteration", type=int, default=5, help="iteration for crf")
 
-    parser.add_argument("--Rise", type=bool, default=True, help="use Rise non-smoke or not")
-    parser.add_argument("--Rise_path", type=str, default=os.path.join(project_root, "Rise/Strong_negative_frames/"),
-                        help="path to Rise")
-
-    parser.add_argument("--Dutch", type=bool, default=True, help="use Dutch non-smoke or not")
-    parser.add_argument("--Dutch_path", type=str, default=os.path.join(project_root, "lib/dataset/frames/"),
-                        help="path to Dutch")
-
-    parser.add_argument("--crop_smoke_image_folder", type=str,
-                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/"),
-                        help="Path to the cropped smoke image dataset folder")
-
-    parser.add_argument("--crop_mask_folder", type=str,
-                        default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/"),
-                        help="Path to the cropped image dataset mask folder")
-
-    parser.add_argument("--crop_non_smoke_folder", type=str,
-                        default=os.path.join(project_root,
-                                             "smoke-segmentation.v5i.coco-segmentation/non_smoke_images/"),
-                        help="Path to the cropped image dataset mask folder")
-
-    parser.add_argument("--use_crop", type=bool, default=True, help="use cropped image or not")
-
-    # Train
-    parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
-    parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
-    parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
+    parser.add_argument("--save_pseudo_labels_path", type=str,
+                        default=os.path.join(project_root, "result/sam_pseudo_labels"),
+                        help="Path to save the pseudo labels")
+    parser.add_argument("--CAM_type", type=str, default='GradCAM',
+                        choices=['grad', 'TransCAM', 'TsCAM'],
+                        help="CAM type")
 
     parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
-    parser.add_argument("--lr", type=float, default=1e-6, help="initial learning rate")
-    # parser.add_argument("--lr", type=float, default=0.1, help="initial learning rate")
-    # parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
-    # parser.add_argument("--lr", type=float, default=1e-4, help="initial learning rate") converge but misaligned
-    parser.add_argument("--img_size", type=int, default=512, help="the size of image")
-    parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
-
-    parser.add_argument("--local_crop_size", default=96, type=int, help="crop_size for local view")
-    parser.add_argument("--crop_size", default=512, type=int, help="crop_size for global view")
-
-    parser.add_argument('--w_reg', default=0.05, type=float,
-                        help='weight for regularization')
-
-    parser.add_argument("--backbone", type=str, default="ToCo",
-                        help="choose backone")
-    parser.add_argument("--ignore_index", default=255, type=int, help="random index")
-    parser.add_argument('--high_threshold', default=0.3, type=float,
-                        help='high threshold')
-    parser.add_argument('--low_threshold', default=0.05, type=float,
-                        help='low threshold')
-    parser.add_argument('--background_threshold', default=0.05, type=float,
-                        help='background threshold')
-
-    parser.add_argument("--cam_scales", default=(1.0, 0.5, 1.5),
-                        help="multi_scales for cam")
-
-    parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
-    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                        help='momentum')
-    parser.add_argument("--loss_type", type=str, default='BCE',
-                        choices=['dice', 'BCE', 'focal_loss'], help="loss type (default: False)")
-
-    parser.add_argument('--weight_decay', '--wd', default=0, type=float,
-                        metavar='W', help='weight decay (default: 1e-4)')
-
-    parser.add_argument('--lr_patience', default=5, type=int,
-                        help='Patience of LR scheduler. See documentation of ReduceLROnPlateau.')
-    parser.add_argument('--iter_size', default=2, type=int, help='when iter_size, opt step forward')
-    parser.add_argument('--freeze', default=True, type=bool)
-    parser.add_argument("--lr_scheduler", type=str, default='step', choices=['poly', 'step'],
-                        help="learning rate scheduler policy")
-
+    parser.add_argument("--sam_model", type=str, default="vit_h",
+                        choices=['vit_b', 'vit_l', 'vit_h'],
+                        help="SAM model type")
+    parser.add_argument("--sam_checkpoint", type=str,
+                        default="pretrained/sam_vit_h_4b8939.pth",
+                        help="SAM checkpoint path")
     return parser.parse_args()
 
 
+def init_sam_predictor(args):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    sam = sam_model_registry[args.sam_model](checkpoint=args.sam_checkpoint)
+    sam.to(device=device)
+
+    mask_generator = SamAutomaticMaskGenerator(
+        model=sam,
+        points_per_side=32,  # increase density
+        pred_iou_thresh=0.82,  # 掩码质量阈值
+        stability_score_thresh=0.85,
+        crop_n_layers=0,
+        crop_n_points_downscale_factor=2,
+        min_mask_region_area=10,  # 过滤小区域
+        output_mode="binary_mask"
+    )
+    return mask_generator
+
+
+def sam_postprocessing(image, cam, mask_generator, threshold=0.3):
+    masks = mask_generator.generate(image)
+
+    valid_masks = []
+    for mask in masks:
+        overlap = np.sum(cam * mask['segmentation']) / np.sum(mask['segmentation'])
+        if overlap > threshold:
+            valid_masks.append(mask['segmentation'])
+
+    if valid_masks:
+        combined_mask = np.logical_or.reduce(valid_masks)
+    else:
+        combined_mask = np.zeros_like(cam, dtype=bool)
+
+    return combined_mask.astype(np.uint8)
+
+
+def compute_iou(pred_mask, gt_mask):
+    intersection = np.logical_and(pred_mask, gt_mask).sum()
+    union = np.logical_or(pred_mask, gt_mask).sum()
+    iou = intersection / (union + 1e-8)
+    return iou
+
+
 if __name__ == "__main__":
-    print("Starting training...")
     args = parse_args()
 
-    print(vars(args))
+    sam_predictor = init_sam_predictor(args)
 
-    print(torch.cuda.is_available())
+    image_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/")
 
-    # set random seed
-    torch.manual_seed(args.manual_seed)
-    torch.cuda.manual_seed(args.manual_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.seed(args.manual_seed)
-    random.seed(args.manual_seed)
+    cam_dir = os.path.join(project_root, "final_model/transformer_GradCAM_0.3_10_pseudo_labels/")
+    # cam_dir=os.path.join(project_root, "result/resnet101_GradCAM_0.3_10_pseudo_labels/")
+    pseudo_dir = os.path.join(project_root, "final_model/transformer_GradCAM_0.3_10_pseudo_labels/")
+    mask_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    save_pseudo_labels_path = os.path.join(
+        os.path.dirname(args.save_pseudo_labels_path),
+        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_pseudo_labels_path)}"
+    )
+    os.makedirs(save_pseudo_labels_path, exist_ok=True)
+    print("mask_path", mask_dir)
+    print("cam_path", cam_dir)
 
-    # ---- preprocess ----
-    # Get transformations
-    image_transform, mask_transform = get_transforms(args.img_size)
+    samples = []
 
-    # Split dataset
-    if args.use_crop:
-        train_dataset = LocalCropDataset(
-            args.crop_smoke_image_folder,
-            args.crop_mask_folder,
-            transform=image_transform,
-            mask_transform=mask_transform,
-            local_crop_size=args.local_crop_size,
-        )
-        total_size = len(train_dataset)
-        train_size = int(0.7 * total_size)
-        val_size = int(0.1 * total_size)
-        test_size = total_size - train_size - val_size
+    for img_name in sorted(os.listdir(image_dir)):
+        if img_name.startswith('.'):
+            continue
 
-        # Split dataset
-        train_subset, val_subset, test_subset = random_split(train_dataset, [train_size, val_size, test_size])
-        # Create DataLoaders
-        train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
-        val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False)
-        test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
-
-        train_dataset_1 = CropDataset(
-            args.crop_smoke_image_folder,
-            args.crop_mask_folder,
-            args.crop_non_smoke_folder,
-            transform=image_transform,
-            mask_transform=mask_transform,
-            img_size=(args.crop_size, args.crop_size)
-        )
-
-        total_size = len(train_dataset_1)
-        train_size = int(0.7 * total_size)
-        test_size = total_size - train_size
-
-        # Split dataset
-        train_subset_1, test_subset_1 = random_split(train_dataset_1, [train_size, test_size])
-
-        # Create DataLoaders
-        train_loader_1 = DataLoader(train_subset_1, batch_size=args.batch_size, shuffle=True)
-        test_loader_1 = DataLoader(test_subset_1, batch_size=args.batch_size, shuffle=False)
-
-        print(f"Train size: {len(train_subset)} |Val size: {len(val_subset)} |Test size: {len(test_subset)}")
-
-    model = choose_backbone(args.backbone)
-    model.to(device)
-
-    # ---- Define Loss & Optimizer ----
-    avg_meter = AverageMeter('cls_loss', 'ptc_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss',
-                             'reg_loss')
-
-    loss_layer = DenseEnergyLoss(weight=1e-7, sigma_rgb=15, sigma_xy=100, scale_factor=0.5)
-
-    ncrops = 10
-
-    CTC_loss = CTCLoss_neg(ncrops=ncrops, temp=1.0).cuda()
-
-    par = PAR(num_iter=10, dilations=[1, 2, 4, 8, 12, 24]).cuda()
-
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    # optimizer = optim.SGD(
-    #             # params=[
-    #             #     {'params': model.backbone.parameters(), 'lr': args.lr / 10},
-    #             #     {'params': model.classifier.parameters(), 'lr': args.lr}
-    #             # ],
-    #             model.parameters(),
-    #             lr=args.lr,
-    #             momentum=args.momentum,
-    #             weight_decay=args.weight_decay
-    #             )
-    if args.lr_scheduler == 'poly':
-        scheduler = PolyLR(optimizer, max_iters=len(train_loader) * args.num_epochs, power=0.9)
-    else:
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,mode='max',patience=args.lr_patience)
-
-    # ---- Training Loop ----
-    best_score = 0.0
-    for epoch in range(1, (args.num_epochs + 1)):
-        model.train()
-        running_loss = 0.0
-        train_accuracy = 0.0
-        train_iou = 0.0
-
-        for i, (images, cls_labels, image_ids, masks, crops) in enumerate(train_loader):
-            images = images.to(device)
-            images_denorm = denormalize_img2(images)
-            cls_labels = cls_labels.to(device)
-
-            masks = masks.to(device)
-            # Reset gradients
-            optimizer.zero_grad()
-
-            cams, cams_aux = multi_scale_cam2(model, inputs=images, scales=args.cam_scales)
-
-            roi_mask = cam_to_roi_mask2(cams_aux.detach(), cls_label=cls_labels,
-                                        hig_thre=args.high_threshold,
-                                        low_thre=args.low_threshold)
-
-            local_crops, flags = crop_from_roi_neg(images=crops[2], roi_mask=roi_mask,
-                                                   crop_num=ncrops - 2, crop_size=96)
-            roi_crops = crops[:2] + local_crops
-            roi_crops = [crop.to(device) for crop in roi_crops]
-            n_iter = (epoch - 1) * len(train_loader) + i
-
-            cls, segs, fmap, cls_aux, out_t, out_s = model(images, crops=roi_crops, n_iter=n_iter)
-
-            # print("cls",cls.shape)
-            #             print("cls_labels",cls_labels.shape)
-            #             print("cls_aux",cls_aux.shape)
-            #             cls torch.Size([8, 2])
-            #             cls_labels torch.Size([8])
-            #              cls_aux torch.Size([8, 2])
-            # if cls_labels.ndim ==1:
-            #     cls_labels=F.one_hot(cls_labels, num_classes=2).float()
-            cls = cls[:, 1]
-            cls_aux = cls_aux[:, 1]
-            cls_loss = F.binary_cross_entropy_with_logits(cls, cls_labels.float())
-
-            cls_loss_aux = F.multilabel_soft_margin_loss(cls_aux, cls_labels.float())
-
-            ctc_loss = CTC_loss(out_s, out_t, flags)
-
-            valid_cam, _ = cam_to_label(
-                cams.detach(),
-                cls_labels=cls_labels,
-                # img_box=None,
-                ignore_mid=True,
-                bkg_thre=args.background_threshold,
-                high_thre=args.high_threshold,
-                low_thre=args.low_threshold,
-                ignore_index=args.ignore_index)
-
-            valid_cam_aux, _ = cam_to_label(
-                cams_aux.detach(),
-                cls_labels=cls_labels,
-                # img_box=None,
-                ignore_mid=True,
-                bkg_thre=args.background_threshold,
-                high_thre=args.high_threshold,
-                low_thre=args.low_threshold,
-                ignore_index=args.ignore_index)
-
-            if epoch <= 5:
-                refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam_aux,
-                                                               cls_labels=cls_labels,
-                                                               high_thre=args.high_threshold,
-                                                               low_thre=args.low_threshold,
-                                                               ignore_index=args.ignore_index,
-                                                               # img_box=img_box,
-                                                               )
-            else:
-                refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam,
-                                                               cls_labels=cls_labels,
-                                                               high_thre=args.high_threshold,
-                                                               low_thre=args.low_threshold,
-                                                               ignore_index=args.ignore_index,
-                                                               # img_box=img_box,
-                                                               )
-            # print("refined_pseudo_label.shape",refined_pseudo_label.shape)
-            # print(f"Label min: {refined_pseudo_label.min().item()}, max: {refined_pseudo_label.max().item()}")
-            # print(f"Number of classes in segs: {segs.size(1)}")
-            # print(f"segs shape: {segs.shape}")
-
-            segs = F.interpolate(segs, size=refined_pseudo_label.shape[1:], mode='bilinear', align_corners=False)
-
-            seg_loss = get_seg_loss(segs, refined_pseudo_label.type(torch.long), ignore_index=args.ignore_index)
-
-            reg_loss = get_energy_loss(
-                img=images,
-                logit=segs,
-                label=refined_pseudo_label,
-                # img_box=None,
-                loss_layer=loss_layer)
-
-            resized_cams_aux = F.interpolate(cams_aux, size=fmap.shape[2:], mode="bilinear", align_corners=False)
-
-            pseudo_label_aux = cam_to_label(resized_cams_aux.detach(), cls_labels=cls_labels,
-                                            # img_box=None,
-                                            ignore_mid=False,
-                                            bkg_thre=args.background_threshold,
-                                            high_thre=args.high_threshold,
-                                            low_thre=args.low_threshold,
-                                            ignore_index=args.ignore_index)
-
-            # torch.Size([8, 32, 32])
-            # print("pseudo_label_aux",pseudo_label_aux.shape)
-
-            aff_mask = label_to_aff_mask(pseudo_label_aux)
-
-            ptc_loss = get_masked_ptc_loss(fmap, aff_mask)
-            # ptc_loss = get_ptc_loss(fmap, low_fmap)
-            # Early training phase - Using only classification losses")
-            # if epoch <= 5:
-            #     loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.0 * seg_loss + 0.0 * reg_loss
-            # #Middle training phase - Adding segmentation and regularization losses"
-            # elif epoch <= 10:
-            #     loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.0 * ptc_loss + 0.0 * ctc_loss + 0.1 * seg_loss + args.w_reg * reg_loss
-            # # Final training phase - Using all losses
-            # else:
-            #     loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.2 * ptc_loss + 0.5 * ctc_loss + 0.1 * seg_loss + args.w_reg * reg_loss
-            # if epoch<=15:
-            #     loss = 1.0 * cls_loss + 1.0 * cls_loss_aux
-            # else:
-            #     loss = 1.0 * cls_loss + 1.0 * cls_loss_aux+0.1 * seg_loss
-            # else:
-            #     loss=1.0 * cls_loss + 1.0 * cls_loss_aux + 0.1 * seg_loss + args.w_reg * reg_loss
-            if epoch <= 5:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux
-            else:
-                loss = 1.0 * cls_loss + 1.0 * cls_loss_aux + 0.1 * seg_loss
-            cls_pred = (cls > 0).type(torch.int16)
-            cls_score = metrics.f1_score(cls_labels.cpu().numpy().flatten(), cls_pred.cpu().numpy().flatten())
-
-            avg_meter.add({
-                'cls_loss': cls_loss.item(),
-                'ptc_loss': ptc_loss.item(),
-                'ctc_loss': ctc_loss.item(),
-                'cls_loss_aux': cls_loss_aux.item(),
-                'seg_loss': seg_loss.item(),
-                'cls_score': cls_score,
-                'reg_loss': reg_loss.item(),
-                'total_loss': loss.item(),
+        img_path = os.path.join(image_dir, img_name)
+        base_name = os.path.splitext(img_name)[0]
+        cam_path = os.path.join(cam_dir, f"fusion_cam_{base_name}.npy")
+        # cam_path = os.path.join(cam_dir, f"fusion_cam_{img_name}")
+        # pseudo_path = os.path.join(pseudo_dir, f"fusion_pseudo_label_{img_name}")
+        mask_path = os.path.join(mask_dir, f"mask_{img_name}") if mask_dir else None
+        if os.path.exists(cam_path) and os.path.exists(mask_path):
+            samples.append({
+                'image': img_path,
+                'cam': cam_path,
+                'image_id': base_name,
+                # 'pseudo': pseudo_path,
+                'mask': mask_path if mask_path and os.path.exists(mask_path) else None,
             })
 
-            loss.backward()
-            # update weights
-            optimizer.step()
-            if args.lr_scheduler == 'poly':
-                scheduler.step()
+    optimal_thresholds = []
+    fixed_mIOU = []
+    # pseudo_mIOU=[]
+    sam_fixed_mIOU = []
+    # for i in range(15):
+    for i in range(len(samples)):
+        sample = samples[i]
 
-        print(f"Epoch: {epoch}/{args.num_epochs} "
-              f"Loss: {avg_meter.get('total_loss'):.4f}, "
-              f"Cls Loss: {avg_meter.get('cls_loss'):.4f}, "
-              f"Seg Loss: {avg_meter.get('seg_loss'):.4f}, "
-              f"Reg Loss: {avg_meter.get('reg_loss'):.4f}, "
-              f"PTC Loss: {avg_meter.get('ptc_loss'):.4f}, "
-              f"CTC Loss: {avg_meter.get('ctc_loss'):.4f}, "
-              f"Cls Loss Aux: {avg_meter.get('cls_loss_aux'):.4f}, "
-              f"Cls Score: {avg_meter.get('cls_score'):.4f}", flush=True)
+        img_id = sample['image_id']
+        print("image_id", img_id)
+        orig_img = cv2.imread(sample['image'])
+        orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
 
-        if args.lr_scheduler == 'step':
-            scheduler.step()
+        cam = np.load(sample['cam'])
 
-    save_path = os.path.join(
-        os.path.dirname(args.save_model_path),
-        f"{args.backbone}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
-    )
-    torch.save(model.state_dict(), save_path)
-    print("Training complete!")
+        gt_mask = cv2.imread(sample['mask'], cv2.IMREAD_GRAYSCALE)
+        gt_mask = (gt_mask > 127).astype(np.uint8)
 
-    # ---- Inference----
+        # Calculate IoU with fixed threshold of 0.3
+        fixed_pred = (cam >= args.threshold).astype(np.uint8)
+        fixed_iou = compute_iou(fixed_pred, gt_mask)
+        fixed_mIOU.append(fixed_iou)
 
-    # ---- Load the trained model for testing ----
-    model.load_state_dict(torch.load(save_path))
-    model.eval()
-    avg_meter = AverageMeter('cls_loss', 'ptc_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss')
-    preds, gts, cams, cams_aux = [], [], [], []
-    with torch.no_grad():
-        for i, (images, cls_labels, image_ids, masks) in enumerate(test_loader_1):
-            images = images.to(device)
-            masks = masks.to(device)
-            cls_labels = cls_labels.to(device)
-            if cls_labels.ndim == 1:
-                cls_labels = F.one_hot(cls_labels, num_classes=2).float()
-            inputs = F.interpolate(images, size=[args.crop_size, args.crop_size],
-                                   mode='bilinear', align_corners=False)
+        probs = np.zeros((2, cam.shape[0], cam.shape[1]), dtype=np.float32)
 
-            cls, segs, _, _ = model(inputs, )
-            cls_pred = (cls > 0).type(torch.int16)
-            # print(f"cls_labels shape: {cls_labels.shape}, cls_pred shape: {cls_pred.shape}")
-            _f1 = metrics.f1_score(cls_labels.cpu().numpy().reshape(-1), cls_pred.cpu().numpy().reshape(-1))
-            avg_meter.add({"cls_score": _f1})
+        probs[0] = 1 - cam  # Background probability
+        probs[1] = cam  # Foreground probability
+        probs[0] = np.power(probs[0], 48)
+        probs = probs / (probs.sum(axis=0, keepdims=True) + 1e-8)
 
-            _cams, _cams_aux = multi_scale_cam2(model, inputs, args.cam_scales)
-            # print("_cams:", np.unique(_cams.cpu().numpy().astype(np.int16)))
-            # print("_cams_aux:", np.unique(_cams_aux.cpu().numpy().astype(np.int16)))
-            resized_cam = F.interpolate(_cams, size=masks.shape[1:], mode='bilinear', align_corners=False)
+        sam_mask = sam_postprocessing(
+            orig_img,
+            probs,
+            sam_predictor,
+            threshold=args.threshold
+        )
+        sam_iou = compute_iou(sam_mask, gt_mask)
+        sam_fixed_mIOU.append(sam_iou)
 
-            cam_label = cam_to_label(resized_cam, cls_labels,
-                                     bkg_thre=args.background_threshold,
-                                     high_thre=args.high_threshold, low_thre=args.low_threshold,
-                                     ignore_index=args.ignore_index)
+        if i < 16:
+            fig, axes = plt.subplots(1, 4, figsize=(25, 5))
 
-            resized_cam_aux = F.interpolate(_cams_aux, size=masks.shape[1:],
-                                            mode='bilinear', align_corners=False)
-            cam_label_aux = cam_to_label(resized_cam_aux, cls_labels,
-                                         bkg_thre=args.background_threshold, high_thre=args.high_threshold,
-                                         low_thre=args.low_threshold, ignore_index=args.ignore_index)
+            # Original image
+            axes[0].imshow(orig_img)
+            axes[0].set_title('Original Image')
+            axes[0].axis('off')
 
+            # Original CAM
+            axes[1].imshow(cam, cmap='jet')
+            axes[1].set_title(f'Original CAM (IoU: {fixed_iou:.3f})')
+            axes[1].axis('off')
 
-            resized_segs = F.interpolate(segs, size=masks.shape[1:], mode='bilinear', align_corners=False)
+            # CRF refined CAM
+            axes[2].imshow(sam_mask, cmap='jet')
+            axes[2].set_title(f'SAM Refined CAM (IoU: {sam_iou:.3f})')
+            axes[2].axis('off')
 
-            preds += list(torch.argmax(resized_segs, dim=1).cpu().numpy().astype(np.int16))
-            cams += list(cam_label.cpu().numpy().astype(np.int16))
-            gts += list(masks.cpu().numpy().astype(np.int16))
-            cams_aux += list(cam_label_aux.cpu().numpy().astype(np.int16))
+            # Ground truth
+            axes[3].imshow(gt_mask, cmap='gray')
+            axes[3].set_title('Ground Truth')
+            axes[3].axis('off')
 
-        cls_score = avg_meter.pop('cls_score')
-        seg_score = scores(gts, preds, num_classes=2)
-        cam_score = scores(gts, cams, num_classes=2)
-        cam_aux_score = scores(gts, cams_aux, num_classes=2)
+            plt.tight_layout()
+            os.makedirs("result/visualization/sam_transformer", exist_ok=True)
+            plt.savefig(f"result/visualization/sam_transformer/sample_{i}.png")
+            plt.close()
+        # np.save(
+        #                 os.path.join(save_pseudo_labels_path, f"fusion_cam_{img_id}.npy"),
+        #                 sam_mask
+        #             )
 
-    print("\nTest Results:")
-    print(f"Cls Score: {cls_score:.4f}")
-    print(f"Seg Score: {seg_score}")
-    print(f"Cam Score: {cam_score}")
-    print(f"Cam Aux Score: {cam_aux_score}")
+    # fixed_mean_iou=np.mean(fixed_mIOU)
+    # pseudp_mean_iou=np.mean(pseudo_mIOU)
+    sam_fixed_mean_iou = np.mean(sam_fixed_mIOU)
 
+    # print(f"Mean IoU with (fixed threshold=0.3): {fixed_mean_iou:.4f}")
+    # print(f"Mean IoU with (pseudo label): {pseudp_mean_iou:.4f}")
+    print(f"Mean IoU with sam (fixed threshold=0.3): {sam_fixed_mean_iou:.4f}")
+
+    # plt.figure(figsize=(12, 6))
+    # methods = ['Optimal', 'Fixed=0.3', 'CRF (Optimal)', 'CRF (Fixed=0.3)']
+    # ious = [mean_iou, fixed_mean_iou, crf_mean_iou, crf_fixed_mean_iou]
+    # colors = ['lightcoral', 'skyblue', 'lightcoral', 'skyblue']
+
+    # bars = plt.bar(methods, ious, color=colors)
+    # plt.ylabel('Mean IoU')
+    # plt.title('Comparison of Segmentation Methods')
+    # plt.grid(axis='y', linestyle='--', alpha=0.7)
+    # plt.xticks(rotation=15)
+
+    # # Add value labels on top of each bar
+    # for bar in bars:
+    #     height = bar.get_height()
+    #     plt.text(bar.get_x() + bar.get_width()/2., height + 0.005,
+    #             f'{height:.4f}', ha='center', va='bottom')
+
+    # plt.tight_layout()
+    # plt.savefig("result/visualization/transformer_all_methods_comparison.png")
+    # plt.close()
