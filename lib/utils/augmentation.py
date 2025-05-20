@@ -8,6 +8,26 @@ import random
 from PIL import Image
 from albumentations import Compose
 from albumentations.augmentations.dropout.coarse_dropout import CoarseDropout
+import torchvision.transforms.functional as TF
+
+
+def augment_batch(images):
+    augmented_images = []
+    for img in images:
+        # Apply random horizontal flip
+        if torch.rand(1) > 0.5:
+            img = TF.hflip(img)
+        # Apply color jitter (adjust parameters as needed)
+        brightness = torch.empty(1).uniform_(0.8, 1.2).item()
+        contrast = torch.empty(1).uniform_(0.8, 1.2).item()
+        saturation = torch.empty(1).uniform_(0.8, 1.2).item()
+        hue = torch.empty(1).uniform_(-0.05, 0.05).item()
+        img = TF.adjust_brightness(img, brightness)
+        img = TF.adjust_contrast(img, contrast)
+        img = TF.adjust_saturation(img, saturation)
+        img = TF.adjust_hue(img, hue)
+        augmented_images.append(img)
+    return torch.stack(augmented_images).to(images.device)
 
 
 class SmokeCopyPaste:

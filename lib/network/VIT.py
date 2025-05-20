@@ -205,8 +205,8 @@ class PatchEmbed(nn.Module):
     def forward(self, x):
         B, C, H, W = x.shape
         # FIXME look at relaxing size constraints
-        assert H == self.img_size[0] and W == self.img_size[1], \
-            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        # assert H == self.img_size[0] and W == self.img_size[1], \
+        #     f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x
 
@@ -257,18 +257,20 @@ class VisionTransformer(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
-        self._size = img_size // patch_size
+
         if hybrid_backbone is not None:
             self.patch_embed = HybridEmbed(
                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
         else:
             self.patch_embed = PatchEmbed(
                 img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
+
         num_patches = self.patch_embed.num_patches
         # It has the same dimensionality as the patch embeddings
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
+        self._size = img_size // patch_size
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
@@ -331,15 +333,18 @@ class VisionTransformer(nn.Module):
         x = self.prepare_tokens(x)
         x = self.pos_drop(x)
         attn_weights = []
+        cls_embeddings = []  # Store CLS tokens from all layers
         for blk in self.blocks:
             x, weights = blk(x)
             attn_weights.append(weights)
+            cls_embeddings.append(x[:, 0])
 
         x = self.norm(x)
-        return x[:, 0], attn_weights
+        cls_embeddings.append(x[:, 0])
+        return x[:, 0], attn_weights, cls_embeddings
 
     def forward(self, x):
-        x, attn_weights = self.forward_features(x)
+        x, attn_weights, _ = self.forward_features(x)
         x = self.head(x)
         # if self.training:
         #     return x
@@ -371,7 +376,7 @@ def vit_small_patch16_224(pretrained=False, **kwargs):
 
 
 @register_model
-def vit_base_patch16_224(pretrained=True, num_classes=1, **kwargs):
+def backbone_vit_base_patch16_224(pretrained=True, num_classes=1, **kwargs):
     model = VisionTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True, img_size=512,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)

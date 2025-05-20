@@ -44,6 +44,8 @@ video frames
 **Smoke 5K**
 https://github.com/MultiX-Amsterdam/ijmond-camera-ai/tree/main/bvm_training/trans_bvm
 
+**deep-smoke-machine**
+https://github.com/CMU-CREATE-Lab/deep-smoke-machine
 # model
 
 ## Supervised learning

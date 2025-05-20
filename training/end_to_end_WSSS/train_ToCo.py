@@ -103,8 +103,8 @@ def parse_args():
     parser.add_argument("--val_batch_size", type=int, default=4, help="val batch size")
     parser.add_argument("--augmentation", type=bool, default=True, help="use aug or not")
 
-    parser.add_argument("--num_epochs", type=int, default=20, help="epoch number")
-    parser.add_argument("--lr", type=float, default=5e-3, help="initial learning rate")
+    parser.add_argument("--num_epochs", type=int, default=30, help="epoch number")
+    parser.add_argument("--lr", type=float, default=1e-4, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=0.1, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
     # parser.add_argument("--lr", type=float, default=1e-4, help="initial learning rate") converge but misaligned
@@ -120,9 +120,9 @@ def parse_args():
     parser.add_argument("--backbone", type=str, default="ToCo",
                         help="choose backone")
     parser.add_argument("--ignore_index", default=255, type=int, help="random index")
-    parser.add_argument('--high_threshold', default=0.65, type=float,
+    parser.add_argument('--high_threshold', default=0.3, type=float,
                         help='high threshold')
-    parser.add_argument('--low_threshold', default=0.3, type=float,
+    parser.add_argument('--low_threshold', default=0.001, type=float,
                         help='low threshold')
     parser.add_argument('--background_threshold', default=0.3, type=float,
                         help='background threshold')
@@ -221,8 +221,7 @@ if __name__ == "__main__":
     model.to(device)
 
     # ---- Define Loss & Optimizer ----
-    avg_meter = AverageMeter('cls_loss', 'ptc_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss',
-                             'reg_loss')
+    avg_meter = AverageMeter('cls_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss', 'reg_loss')
 
     loss_layer = DenseEnergyLoss(weight=1e-7, sigma_rgb=15, sigma_xy=100, scale_factor=0.5)
 
@@ -334,22 +333,18 @@ if __name__ == "__main__":
                 low_thre=args.low_threshold,
                 ignore_index=args.ignore_index)
 
-            if epoch <= 10:
-                refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam_aux,
-                                                               cls_labels=cls_labels,
-                                                               high_thre=args.high_threshold,
-                                                               low_thre=args.low_threshold,
-                                                               ignore_index=args.ignore_index,
-                                                               # img_box=img_box,
-                                                               )
-            else:
-                refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam,
-                                                               cls_labels=cls_labels,
-                                                               high_thre=args.high_threshold,
-                                                               low_thre=args.low_threshold,
-                                                               ignore_index=args.ignore_index,
-                                                               # img_box=img_box,
-                                                               )
+            # if epoch <= 10:
+            #     refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam_aux, cls_labels=cls_labels,
+            #         high_thre=args.high_threshold, low_thre=args.low_threshold,
+            #         ignore_index=args.ignore_index,
+            #         # img_box=img_box,
+            #         )
+            # else:
+            refined_pseudo_label = refine_cams_with_bkg_v2(par, images_denorm, cams=valid_cam, cls_labels=cls_labels,
+                                                           high_thre=args.high_threshold, low_thre=args.low_threshold,
+                                                           ignore_index=args.ignore_index,
+                                                           # img_box=img_box,
+                                                           )
             # print("refined_pseudo_label.shape",refined_pseudo_label.shape)
             # print(f"Label min: {refined_pseudo_label.min().item()}, max: {refined_pseudo_label.max().item()}")
             # print(f"Number of classes in segs: {segs.size(1)}")
@@ -381,7 +376,8 @@ if __name__ == "__main__":
 
             aff_mask = label_to_aff_mask(pseudo_label_aux)
 
-            ptc_loss = get_masked_ptc_loss(fmap, aff_mask)
+            # ptc_loss = get_masked_ptc_loss(fmap, aff_mask)
+
             # ptc_loss = get_ptc_loss(fmap, low_fmap)
             # Early training phase - Using only classification losses")
             # if epoch <= 5:
@@ -400,18 +396,21 @@ if __name__ == "__main__":
             #     loss=1.0 * cls_loss + 1.0 * cls_loss_aux + 0.1 * seg_loss + args.w_reg * reg_loss
             if epoch <= 10:
                 # cls_loss_aux too dominant
-                loss = 1.0 * cls_loss + 0.01 * cls_loss_aux
+                loss = 1.0 * cls_loss
+            elif epoch <= 20:
+                # seg_weight = min(0.1 * (epoch - 10), 1.0) if epoch > 10 else 0.0#linear growth
+                loss = 1.0 * cls_loss + 1.0 * seg_loss
             else:
-                seg_weight = min(0.1 * (epoch - 10), 1.0) if epoch > 10 else 0.0  # linear growth
+                # seg_weight = min(0.1 * (epoch - 20), 1.0) if epoch > 20 else 0.0#linear growth
 
-                loss = 1.0 * cls_loss + 0.01 * cls_loss_aux + seg_weight * seg_loss
+                loss = 1.0 * cls_loss + 1.0 * seg_loss + 1.0 * ctc_loss
 
             cls_pred = (cls > 0).type(torch.int16)
             cls_score = metrics.f1_score(cls_labels.cpu().numpy().flatten(), cls_pred.cpu().numpy().flatten())
 
             avg_meter.add({
                 'cls_loss': cls_loss.item(),
-                'ptc_loss': ptc_loss.item(),
+                # 'ptc_loss': ptc_loss.item(),
                 'ctc_loss': ctc_loss.item(),
                 'cls_loss_aux': cls_loss_aux.item(),
                 'seg_loss': seg_loss.item(),
@@ -431,7 +430,7 @@ if __name__ == "__main__":
               f"Cls Loss: {avg_meter.get('cls_loss'):.4f}, "
               f"Seg Loss: {avg_meter.get('seg_loss'):.4f}, "
               f"Reg Loss: {avg_meter.get('reg_loss'):.4f}, "
-              f"PTC Loss: {avg_meter.get('ptc_loss'):.4f}, "
+              #   f"PTC Loss: {avg_meter.get('ptc_loss'):.4f}, "
               f"CTC Loss: {avg_meter.get('ctc_loss'):.4f}, "
               f"Cls Loss Aux: {avg_meter.get('cls_loss_aux'):.4f}, "
               f"Cls Score: {avg_meter.get('cls_score'):.4f}", flush=True)
@@ -451,7 +450,7 @@ if __name__ == "__main__":
     # ---- Load the trained model for testing ----
     model.load_state_dict(torch.load(save_path))
     model.eval()
-    avg_meter = AverageMeter('cls_loss', 'ptc_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss')
+    avg_meter = AverageMeter('cls_loss', 'ctc_loss', 'cls_loss_aux', 'seg_loss', 'cls_score', 'total_loss')
     preds, gts, cams, cams_aux = [], [], [], []
     with torch.no_grad():
         for i, (images, cls_labels, image_ids, masks) in enumerate(test_loader_1):
