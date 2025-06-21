@@ -1,4 +1,9 @@
 # Master-thesis
+
+Industrial exhaust smoke emission semantic segmentation using image level annotations.
+
+scarcity of labels
+
 Run on SURF
 
 all the codes are for binary classification and semantic segmentation
@@ -22,53 +27,52 @@ python setup.py install
 **3. Segmentation**
 
 
-# Usage(End to End )
-
-
-# Results 
-
-**Class Activation Map**
 
 # Dataset
 
-900 labeled images [1920,1280]
+Train
+IJmond video frames.
+Smoke vs non Smoke to train a classifier.
 
-Instead of resize, crop the images to generate [512,512]
+Test
+900 labeled images [1920,1280]. Instead of resize, crop the images to generate [512,512]
 
-
-
-7 month 
-
-video frames
+served as out of distribution data
 
 **Smoke 5K**
 https://github.com/MultiX-Amsterdam/ijmond-camera-ai/tree/main/bvm_training/trans_bvm
 
 **deep-smoke-machine**
 https://github.com/CMU-CREATE-Lab/deep-smoke-machine
+
 # model
 
 ## Supervised learning
 DeeplabV3+
 
-## Weakly supervised learning manner
-
-### multi-stage
-
-#### classifier
+## multi-stage Weakly supervised learning 
+![img_4.png](img_4.png)
+### classifier
 ViT
 
 Resnet101
 
-#### Refinement
+### Refinement
 
-**Threshold**
+#### optimizing the feature representation for classifier
+#### post-processing
 
-##### Adversarial erasing
+CRF
 
-##### AffinityNet
+SAM-enhanced
+
+CAM-fusion
+
+Multi-scale
+
 
 
 #####
 # Choosing the layer(s) to extract activations from
 
+# Results 

@@ -247,6 +247,234 @@ class HybridEmbed(nn.Module):
         return x
 
 
+# class VisionTransformer(nn.Module):
+#     def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
+#                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+#                  drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, vis=False,
+#                  drop_token_ratio=0.1):
+#         super().__init__()
+#         self.num_classes = num_classes
+#         self.num_features = self.embed_dim = embed_dim
+#         self.drop_token_ratio = drop_token_ratio
+
+#         if hybrid_backbone is not None:
+#             self.patch_embed = HybridEmbed(
+#                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
+#         else:
+#             self.patch_embed = PatchEmbed(
+#                 img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
+
+#         num_patches = self.patch_embed.num_patches
+#         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+#         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+#         self.pos_drop = nn.Dropout(p=drop_rate)
+#         self._size = img_size // patch_size
+
+#         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
+#         self.blocks = nn.ModuleList([
+#             Block(
+#                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
+#                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, vis=vis)
+#             for i in range(depth)])
+#         self.norm = norm_layer(embed_dim)
+
+#         self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+#         trunc_normal_(self.pos_embed, std=.02)
+#         trunc_normal_(self.cls_token, std=.02)
+#         self.apply(self._init_weights)
+
+#     def _init_weights(self, m):
+#         if isinstance(m, nn.Linear):
+#             trunc_normal_(m.weight, std=.02)
+#             if m.bias is not None:
+#                 nn.init.constant_(m.bias, 0)
+#         elif isinstance(m, nn.LayerNorm):
+#             nn.init.constant_(m.bias, 0)
+#             nn.init.constant_(m.weight, 1.0)
+
+#     @torch.jit.ignore
+#     def no_weight_decay(self):
+#         return {'pos_embed', 'cls_token'}
+
+#     def get_classifier(self):
+#         return self.head
+
+#     def reset_classifier(self, num_classes, global_pool=''):
+#         self.num_classes = num_classes
+#         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+#     def prepare_tokens(self, x):
+#         B, nc, h, w = x.shape
+#         h, w = h // self.patch_embed.patch_size[0], w // self.patch_embed.patch_size[1]
+#         x = self.patch_embed(x)
+
+#         patch_pos_embed = self.pos_embed[:, 1:, :].reshape(1, self._size, self._size, -1).permute(0, 3, 1, 2)
+#         patch_pos_embed = F.interpolate(patch_pos_embed, size=(h, w), mode="bicubic", align_corners=False)
+#         patch_pos_embed = patch_pos_embed.reshape(1, -1, h * w).permute(0, 2, 1)
+#         pos_embed = torch.cat((self.pos_embed[:, :1, :], patch_pos_embed), dim=1)
+
+#         cls_tokens = self.cls_token.expand(B, -1, -1)
+#         x = torch.cat((cls_tokens, x), dim=1)
+#         x = x + pos_embed
+#         return x
+
+#     def apply_token_dropout(self, x):
+#         if not self.training or self.drop_token_ratio == 0.0:
+#             return x
+
+#         cls_token, patch_tokens = x[:, :1, :], x[:, 1:, :]
+#         B, N, D = patch_tokens.shape
+#         drop_num = int(N * self.drop_token_ratio)
+
+#         mask = torch.ones((B, N), dtype=torch.bool, device=x.device)
+#         for i in range(B):
+#             drop_idx = torch.randperm(N, device=x.device)[:drop_num]
+#             mask[i, drop_idx] = False
+
+#         patch_tokens[~mask] = 0  # zero out dropped tokens
+#         return torch.cat([cls_token, patch_tokens], dim=1)
+
+#     def forward_features(self, x):
+#         x = self.prepare_tokens(x)
+#         x = self.pos_drop(x)
+#         x = self.apply_token_dropout(x)
+
+#         attn_weights = []
+#         cls_embeddings = []
+#         for blk in self.blocks:
+#             x, weights = blk(x)
+#             attn_weights.append(weights)
+#             cls_embeddings.append(x[:, 0])
+
+#         x = self.norm(x)
+#         cls_embeddings.append(x[:, 0])
+#         return x[:, 0], attn_weights, cls_embeddings
+
+#     def forward(self, x):
+#         x, attn_weights, _ = self.forward_features(x)
+#         x = self.head(x)
+#         return x, attn_weights
+
+# class VisionTransformer(nn.Module):
+#     def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
+#                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+#                  drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, vis=False,
+#                  drop_token_ratio=0.1):
+#         super().__init__()
+#         self.num_classes = num_classes
+#         self.num_features = self.embed_dim = embed_dim
+#         self.drop_token_ratio = drop_token_ratio
+
+#         # 添加可学习的MASK标记
+#         self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))  # 新增
+
+#         if hybrid_backbone is not None:
+#             self.patch_embed = HybridEmbed(
+#                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
+#         else:
+#             self.patch_embed = PatchEmbed(
+#                 img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
+
+#         num_patches = self.patch_embed.num_patches
+#         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+#         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+#         self.pos_drop = nn.Dropout(p=drop_rate)
+#         self._size = img_size // patch_size
+
+#         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
+#         self.blocks = nn.ModuleList([
+#             Block(
+#                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
+#                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, vis=vis)
+#             for i in range(depth)])
+#         self.norm = norm_layer(embed_dim)
+
+#         self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+#         trunc_normal_(self.pos_embed, std=.02)
+#         trunc_normal_(self.cls_token, std=.02)
+#         trunc_normal_(self.mask_token, std=.02)  # 新增初始化
+#         self.apply(self._init_weights)
+
+#     def _init_weights(self, m):
+#         if isinstance(m, nn.Linear):
+#             trunc_normal_(m.weight, std=.02)
+#             if m.bias is not None:
+#                 nn.init.constant_(m.bias, 0)
+#         elif isinstance(m, nn.LayerNorm):
+#             nn.init.constant_(m.bias, 0)
+#             nn.init.constant_(m.weight, 1.0)
+
+#     @torch.jit.ignore
+#     def no_weight_decay(self):
+#         return {'pos_embed', 'cls_token', 'mask_token'}  # 新增mask_token
+
+#     def get_classifier(self):
+#         return self.head
+
+#     def reset_classifier(self, num_classes, global_pool=''):
+#         self.num_classes = num_classes
+#         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+#     def prepare_tokens(self, x):
+#         B, nc, h, w = x.shape
+#         h, w = h // self.patch_embed.patch_size[0], w // self.patch_embed.patch_size[1]
+#         x = self.patch_embed(x)
+
+#         patch_pos_embed = self.pos_embed[:, 1:, :].reshape(1, self._size, self._size, -1).permute(0, 3, 1, 2)
+#         patch_pos_embed = F.interpolate(patch_pos_embed, size=(h, w), mode="bicubic", align_corners=False)
+#         patch_pos_embed = patch_pos_embed.reshape(1, -1, h * w).permute(0, 2, 1)
+#         pos_embed = torch.cat((self.pos_embed[:, :1, :], patch_pos_embed), dim=1)
+
+#         cls_tokens = self.cls_token.expand(B, -1, -1)
+#         x = torch.cat((cls_tokens, x), dim=1)
+#         x = x + pos_embed
+#         return x
+
+#     def apply_token_dropout(self, x):
+#         if not self.training or self.drop_token_ratio == 0.0:
+#             return x
+
+#         cls_token, patch_tokens = x[:, :1, :], x[:, 1:, :]
+#         B, N, D = patch_tokens.shape
+#         drop_num = int(N * self.drop_token_ratio)
+
+#         # 创建丢弃掩码
+#         mask = torch.ones((B, N), dtype=torch.bool, device=x.device)
+#         for i in range(B):
+#             drop_idx = torch.randperm(N, device=x.device)[:drop_num]
+#             mask[i, drop_idx] = False
+
+#         # 使用MASK标记替换被丢弃的token (改进点)
+#         mask_tokens = self.mask_token.expand(B, drop_num, D)  # 扩展MASK标记
+#         patch_tokens = patch_tokens.clone()  # 确保不修改原始tensor
+#         patch_tokens[~mask] = mask_tokens.reshape(B * drop_num, D)  # 替换
+
+#         return torch.cat([cls_token, patch_tokens], dim=1)
+
+#     def forward_features(self, x):
+#         x = self.prepare_tokens(x)
+#         x = self.pos_drop(x)
+#         x = self.apply_token_dropout(x)  # 应用改进的token dropout
+
+#         attn_weights = []
+#         cls_embeddings = []
+#         for blk in self.blocks:
+#             x, weights = blk(x)
+#             attn_weights.append(weights)
+#             cls_embeddings.append(x[:, 0])
+
+#         x = self.norm(x)
+#         cls_embeddings.append(x[:, 0])
+#         return x[:, 0], attn_weights, cls_embeddings
+
+#     def forward(self, x):
+#         x, attn_weights, _ = self.forward_features(x)
+#         x = self.head(x)
+#         return x, attn_weights
+
+
 class VisionTransformer(nn.Module):
     """ Vision Transformer with support for patch or hybrid CNN input stage
     """
@@ -270,6 +498,7 @@ class VisionTransformer(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
+        self.feature_shape = None
         self._size = img_size // patch_size
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -341,15 +570,20 @@ class VisionTransformer(nn.Module):
 
         x = self.norm(x)
         cls_embeddings.append(x[:, 0])
-        return x[:, 0], attn_weights, cls_embeddings
+        if self.feature_shape is None:
+            self.feature_shape = (self.embed_dim, self._size, self._size)
+        # 返回所有patch tokens，不包括CLS token
+        patch_tokens = x[:, 1:]
+        B, num_patches, embed_dim = patch_tokens.shape
+        H = W = int(num_patches ** 0.5)
+        feature_map = patch_tokens.permute(0, 2, 1).reshape(B, embed_dim, H, W)
+
+        return x[:, 0], attn_weights, cls_embeddings, feature_map
 
     def forward(self, x):
-        x, attn_weights, _ = self.forward_features(x)
+        x, attn_weights, _, feature_map = self.forward_features(x)
         x = self.head(x)
-        # if self.training:
-        #     return x
-        # else:
-        return x, attn_weights
+        return x, attn_weights, feature_map
 
 
 def _conv_filter(state_dict, patch_size=16):

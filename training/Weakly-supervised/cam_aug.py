@@ -49,7 +49,7 @@ def parse_args():
                         help="Path to the non-smoke image dataset folder")
 
     parser.add_argument("--save_model_path", type=str,
-                        default=os.path.join(project_root, "model/model_classification_raw.pth"),
+                        default=os.path.join(project_root, "final_model/model_classification_without900.pth"),
                         help="Path to save the trained model")
 
     parser.add_argument("--smoke5k", type=bool, default=False, help="use smoke5k or not")
@@ -102,15 +102,11 @@ def parse_args():
 
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
 
-    # parser.add_argument("--backbone", type=str, default="transformer",
-    # help="choose backone")
-    parser.add_argument("--backbone", type=str, default="resnet101",
+    parser.add_argument("--backbone", type=str, default="transformer",
                         help="choose backone")
-    # parser.add_argument("--backbone", type=str, default="mix_transformer",
+    # parser.add_argument("--backbone", type=str, default="resnet101",
     # help="choose backone")
-    # parser.add_argument("--backbone", type=str, default="deeplabv3plus_resnet101", help="choose backone")
-
-    parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
+    parser.add_argument('--manual_seed', default=42, type=int, help='Manually set random seed')
 
     # infer
     parser.add_argument("--threshold", type=float, default=0.3, help="threshold to pesudo label")
@@ -131,28 +127,15 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(args.manual_seed)
     torch.cuda.manual_seed_all(args.manual_seed)
     random.seed(args.manual_seed)
-    # train_ids, val_ids, test_ids = split_dataset(args.json_path, args.image_folder)
-
-    # print(f"Smoke Dataset split: Train={len(train_ids)}, Val={len(val_ids)}, Test={len(test_ids)}")
-    # non_smoke_train, non_smoke_val, non_smoke_test = split_non_smoke_dataset(args.non_smoke_image_folder)
-    # print(f"Non-smoke Dataset split: Train={len(non_smoke_train)}, Val={len(non_smoke_val)}, Test={len(non_smoke_test)}")
 
     if args.use_crop:
-        # train_dataset=CropDataset(
-        #     image_dir=args.crop_smoke_image_folder,
-        #     mask_dir=args.crop_mask_folder,
-        #     # args.crop_non_smoke_folder,
-        #     # args.Dutch_negative_path,
-        #     transform=image_transform,
-        #     mask_transform=mask_transform
-        # )
         train_dataset = CropDataset(
-            image_dir=args.crop_smoke_image_folder,
-            mask_dir=args.crop_mask_folder,
+            # image_dir=args.crop_smoke_image_folder,
+            # mask_dir=args.crop_mask_folder,
             # non_smoke_dir=args.crop_non_smoke_folder,
-            # ijmond_positive_dir=args.Dutch_positive_path,
+            ijmond_positive_dir=args.Dutch_positive_path,
             # ijmond_negative_dir=args.Dutch_negative_path,
-            test=True,
+            # test=True,
             transform=image_transform,
             mask_transform=mask_transform,
             img_size=(args.crop_size, args.crop_size),
@@ -171,10 +154,7 @@ if __name__ == "__main__":
         test_indices = indices[train_size:]
         train_subset = Subset(train_dataset, train_indices)
         test_subset = Subset(train_dataset, test_indices)
-        # Split dataset
-        # train_subset, test_subset = random_split(train_dataset, [train_size, test_size])
-        # print(f"Train size: {len(train_subset)} | Test size: {len(test_subset)}")
-        # Create DataLoaders
+
         train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
         test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
 
@@ -185,25 +165,13 @@ if __name__ == "__main__":
         target_layers = [model.layer4[-1]]  # Last layer of layer4
     elif args.backbone == "transformer":
         target_layers = [model.blocks[-1].norm1]  # Last transformer block
-        # target_layers = [
-        # model.blocks[-5].norm1,  #
-        # model.blocks[-4].norm1,  #
-        # model.blocks[-2].norm1, ]#
-
-    elif args.backbone == "mix_transformer":
-        print(dir(model))
-        print("-------------------")
-        target_layers = [model.norm4]  # Last transformer block
-        print(target_layers)
-    else:
-        target_layers = [list(model.children())[-3]]
 
     model.load_state_dict(torch.load(save_path))
     model.eval()
 
     save_cam_path = os.path.join(
         os.path.dirname(args.save_cam_path),
-        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}"
+        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}_aug"
     )
 
     generate_cam_for_dataset(
@@ -211,18 +179,5 @@ if __name__ == "__main__":
         model=model,
         target_layers=target_layers,
         save_dir=save_cam_path,
-    )
-
-    # Generate pseudo-labels
-    save_pseudo_labels_path = os.path.join(
-        os.path.dirname(args.save_pseudo_labels_path),
-        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_pseudo_labels_path)}"
-    )
-
-    generate_pseudo_labels(
-        dataloader=train_loader,
-        model=model,
-        target_layers=target_layers,
-        save_dir=save_pseudo_labels_path,
-        threshold=args.threshold
+        aug=True
     )
