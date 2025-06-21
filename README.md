@@ -8,6 +8,11 @@ Run on SURF
 
 all the codes are for binary classification and semantic segmentation
 
+## Background
+
+![image](https://github.com/user-attachments/assets/6aab2ab6-1e8d-47c0-b329-1fd123cd49c7)
+
+
 # Prerequisite
 
 
@@ -51,7 +56,8 @@ https://github.com/CMU-CREATE-Lab/deep-smoke-machine
 DeeplabV3+
 
 ## multi-stage Weakly supervised learning 
-![img_4.png](img_4.png)
+![image](https://github.com/user-attachments/assets/d566e36b-8010-4805-a35c-ddb1940b28b5)
+
 ### classifier
 ViT
 
@@ -60,6 +66,10 @@ Resnet101
 ### Refinement
 
 #### optimizing the feature representation for classifier
+<img width="1305" alt="image" src="https://github.com/user-attachments/assets/62eef665-af05-45a2-bb75-4a13913339e4" />
+
+
+
 #### post-processing
 
 CRF
@@ -75,4 +85,5 @@ Multi-scale
 #####
 # Choosing the layer(s) to extract activations from
 
-# Results 
+# Results
+<img width="427" alt="image" src="https://github.com/user-attachments/assets/b73cc7d3-0c68-4d73-9bfb-1fdf7e765bbe" />
