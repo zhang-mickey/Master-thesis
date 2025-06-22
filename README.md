@@ -35,14 +35,17 @@ python setup.py install
 
 # Dataset
 
-Train
+**Train**
+
 IJmond video frames.
+[900,900]
 Smoke vs non Smoke to train a classifier.
 
-Test
+**Test**
+
 900 labeled images [1920,1280]. Instead of resize, crop the images to generate [512,512]
 
-served as out of distribution data
+Part of the following images served as out of distribution data
 
 **Smoke 5K**
 https://github.com/MultiX-Amsterdam/ijmond-camera-ai/tree/main/bvm_training/trans_bvm
@@ -63,10 +66,27 @@ ViT
 
 Resnet101
 
+Resnet50
+
 ### Refinement
 
 #### optimizing the feature representation for classifier
 <img width="1305" alt="image" src="https://github.com/user-attachments/assets/62eef665-af05-45a2-bb75-4a13913339e4" />
+
+
+
+
+##### Consistency Learning
+
+**Boundry-Aware ** 
+ResNet-based architecture as the teacher
+
+Transformer-based architecture as the student model
+<img width="908" alt="image" src="https://github.com/user-attachments/assets/077cacbd-1f8d-48ca-b895-ca458b342d4c" />
+
+
+#### optimizing CAM
+
 
 
 
@@ -79,6 +99,12 @@ SAM-enhanced
 CAM-fusion
 
 Multi-scale
+
+Sliding window
+
+CLip-aided
+
+AffinityNet
 
 
 
