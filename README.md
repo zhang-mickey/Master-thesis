@@ -177,6 +177,9 @@ There are several tunable parameters in mask generation
 # Choosing the layer(s) to extract activations from
 
 # Results
+before vs after
+
+![image](https://github.com/user-attachments/assets/deece368-0e24-4b2f-8635-5758d6035225)
 
 The generated CAMs on our custom dataset.
 
