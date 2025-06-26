@@ -160,7 +160,7 @@ if __name__ == "__main__":
         probs = probs / (probs.sum(axis=0, keepdims=True) + 1e-8)
         print("power CAM max:", probs[1].max())
         print("power CAM min:", probs[1].min())
-        # Run CRF inference
+        # Run CRF post_processing
         refined_probs = crf_inference(orig_img, probs, t=args.iteration, scale_factor=1, labels=2)
 
         refined_cam = refined_probs[1]  # Get foreground probability
