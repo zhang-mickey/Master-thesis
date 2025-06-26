@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--iteration", type=int, default=5, help="iteration for crf")
 
     parser.add_argument("--save_pseudo_labels_path", type=str,
-                        default=os.path.join(project_root, "result/sam_pseudo_labels"),
+                        default=os.path.join(project_root, "result/vit_s_sam_pseudo_labels"),
                         help="Path to save the pseudo labels")
     parser.add_argument("--CAM_type", type=str, default='GradCAM',
                         choices=['grad', 'TransCAM', 'TsCAM'],
@@ -46,12 +46,12 @@ def init_sam_predictor(args):
 
     mask_generator = SamAutomaticMaskGenerator(
         model=sam,
-        points_per_side=32,  # increase density
-        pred_iou_thresh=0.82,  # 掩码质量阈值
+        points_per_side=64,  # how densely points are sampled
+        pred_iou_thresh=0.82,  # Threshold for removing low quality or duplicate masks
         stability_score_thresh=0.85,
         crop_n_layers=0,
         crop_n_points_downscale_factor=2,
-        min_mask_region_area=10,  # 过滤小区域
+        min_mask_region_area=20,  # filter small region
         output_mode="binary_mask"
     )
     return mask_generator
@@ -59,17 +59,26 @@ def init_sam_predictor(args):
 
 def sam_postprocessing(image, cam, mask_generator, threshold=0.3):
     masks = mask_generator.generate(image)
+    cam = (cam[1] > 0.3).astype(np.uint8)
 
     valid_masks = []
     for mask in masks:
-        overlap = np.sum(cam * mask['segmentation']) / np.sum(mask['segmentation'])
-        if overlap > threshold:
+        mask_size_ratio = np.sum(mask['segmentation']) / (cam.shape[0] * cam.shape[1])
+        if mask_size_ratio > 0.3:
+            continue
+        # largest intersection
+        intersection = np.sum(cam & mask['segmentation'])
+        union = np.sum(cam | mask['segmentation']) + 1e-6
+        iou = intersection / union
+        # overlap = np.sum(cam * mask['segmentation']) / np.sum(mask['segmentation'])
+        if iou > threshold:
             valid_masks.append(mask['segmentation'])
 
     if valid_masks:
         combined_mask = np.logical_or.reduce(valid_masks)
     else:
-        combined_mask = np.zeros_like(cam, dtype=bool)
+        combined_mask = cam.astype(bool)
+        # combined_mask = np.zeros_like(cam, dtype=bool)
 
     return combined_mask.astype(np.uint8)
 
@@ -88,14 +97,14 @@ if __name__ == "__main__":
 
     image_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/")
 
-    cam_dir = os.path.join(project_root, "final_model/transformer_GradCAM_0.3_10_pseudo_labels/")
+    cam_dir = os.path.join(project_root, "final_model/vit_s_GradCAM_0.3_3_pseudo_labels_kd/")
     # cam_dir=os.path.join(project_root, "result/resnet101_GradCAM_0.3_10_pseudo_labels/")
-    pseudo_dir = os.path.join(project_root, "final_model/transformer_GradCAM_0.3_10_pseudo_labels/")
+    pseudo_dir = os.path.join(project_root, "final_model/vit_s_GradCAM_0.3_3_pseudo_labels_kd/")
     mask_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/")
 
     save_pseudo_labels_path = os.path.join(
         os.path.dirname(args.save_pseudo_labels_path),
-        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_pseudo_labels_path)}"
+        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_pseudo_labels_path)}_sam"
     )
     os.makedirs(save_pseudo_labels_path, exist_ok=True)
     print("mask_path", mask_dir)
@@ -136,6 +145,7 @@ if __name__ == "__main__":
         orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
 
         cam = np.load(sample['cam'])
+        print(cam.shape)
 
         gt_mask = cv2.imread(sample['mask'], cv2.IMREAD_GRAYSCALE)
         gt_mask = (gt_mask > 127).astype(np.uint8)
@@ -149,7 +159,7 @@ if __name__ == "__main__":
 
         probs[0] = 1 - cam  # Background probability
         probs[1] = cam  # Foreground probability
-        probs[0] = np.power(probs[0], 48)
+        probs[0] = np.power(probs[0], 4)
         probs = probs / (probs.sum(axis=0, keepdims=True) + 1e-8)
 
         sam_mask = sam_postprocessing(
@@ -161,7 +171,7 @@ if __name__ == "__main__":
         sam_iou = compute_iou(sam_mask, gt_mask)
         sam_fixed_mIOU.append(sam_iou)
 
-        if i < 16:
+        if i > 15 and i < 31:
             fig, axes = plt.subplots(1, 4, figsize=(25, 5))
 
             # Original image

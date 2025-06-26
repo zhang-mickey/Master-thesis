@@ -14,13 +14,19 @@ Scarcity of pixel-level annotations.
 
 Sparse object coverage
 
+shortcut learning
+
 inaccurate boundries
 
 spurious corelations
 
+## Observation and Motivation 
+
+
 # Preparations
 
-## Dataset
+## Dataset description
+The dataset is captured in specific locations, resulting in low variability in background contexts
 
 **Train**
 
@@ -79,7 +85,21 @@ To start training,just run the scripts `training/jobs/`.
 ```
 sbatch training/jobs/kd.job
 ```
-**2. Refinement**
+#### 2. Refinement
+
+
+**Cross-View Consistency**
+
+
+**AffinityNet**   run the scripts `post_processing/jobs/`
+```
+sbatch train_affinityNet.job
+
+sbatch infer_affinityNet.job
+```
+
+
+
 
 **3. Evaluate**
 

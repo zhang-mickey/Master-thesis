@@ -27,7 +27,7 @@ from lib.utils.splitdataset import *
 from lib.utils.transform import *
 from lib.network import *
 from lib.loss.loss import *
-from inference.inference import *
+from post_processing.inference import *
 from lib.utils.metrics import *
 from lib.utils.saliencymap import *
 from PIL import Image

@@ -27,7 +27,7 @@ from lib.utils.splitdataset import *
 from lib.utils.transform import *
 from lib.network import *
 from lib.loss.loss import *
-from inference.inference import *
+from post_processing.inference import *
 from lib.utils.metrics import *
 from lib.utils.saliencymap import *
 from PIL import Image
@@ -47,10 +47,6 @@ def parse_args():
 
     parser.add_argument("--non_smoke_image_folder", type=str, default=os.path.join(project_root, "lib/dataset/frames/"),
                         help="Path to the non-smoke image dataset folder")
-
-    parser.add_argument("--save_model_path", type=str,
-                        default=os.path.join(project_root, "final_model/model_classification_without900.pth"),
-                        help="Path to save the trained model")
 
     parser.add_argument("--smoke5k", type=bool, default=False, help="use smoke5k or not")
     parser.add_argument("--smoke5k_path", type=str, default=os.path.join(project_root, "SMOKE5K/train/"),
@@ -94,7 +90,7 @@ def parse_args():
                         choices=['grad', 'TransCAM', 'TsCAM'],
                         help="CAM type")
 
-    parser.add_argument("--num_epochs", type=int, default=2, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=3, help="epoch number")
 
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
 
@@ -102,10 +98,20 @@ def parse_args():
 
     parser.add_argument("--num_class", type=int, default=1, help="the number of classes")
 
-    parser.add_argument("--backbone", type=str, default="transformer",
+    # parser.add_argument("--save_model_path", type=str, default=os.path.join(project_root,"final_model/model_classification_without900.pth"), help="Path to save the trained model")
+    parser.add_argument("--save_model_path", type=str,
+                        default=os.path.join(project_root, "model/model_classification_raw.pth"),
+                        help="Path to save the trained model")
+
+    # parser.add_argument("--backbone", type=str, default="transformer",
+    # help="choose backone")
+
+    parser.add_argument("--backbone", type=str, default="resnet50",
                         help="choose backone")
+
     # parser.add_argument("--backbone", type=str, default="resnet101",
     # help="choose backone")
+
     parser.add_argument('--manual_seed', default=42, type=int, help='Manually set random seed')
 
     # infer
@@ -130,12 +136,12 @@ if __name__ == "__main__":
 
     if args.use_crop:
         train_dataset = CropDataset(
-            # image_dir=args.crop_smoke_image_folder,
-            # mask_dir=args.crop_mask_folder,
+            image_dir=args.crop_smoke_image_folder,
+            mask_dir=args.crop_mask_folder,
             # non_smoke_dir=args.crop_non_smoke_folder,
-            ijmond_positive_dir=args.Dutch_positive_path,
+            # ijmond_positive_dir=args.Dutch_positive_path,
             # ijmond_negative_dir=args.Dutch_negative_path,
-            # test=True,
+            test=True,
             transform=image_transform,
             mask_transform=mask_transform,
             img_size=(args.crop_size, args.crop_size),
@@ -161,7 +167,7 @@ if __name__ == "__main__":
     model = choose_backbone(args.backbone)
     model = model.to(device)
 
-    if args.backbone == "resnet101":
+    if args.backbone == "resnet101" or args.backbone == "resnet50":
         target_layers = [model.layer4[-1]]  # Last layer of layer4
     elif args.backbone == "transformer":
         target_layers = [model.blocks[-1].norm1]  # Last transformer block
@@ -169,15 +175,63 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(save_path))
     model.eval()
 
-    save_cam_path = os.path.join(
+    save_PCM_cam_path = os.path.join(
         os.path.dirname(args.save_cam_path),
-        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}_aug"
+        f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}_PCM"
     )
 
-    generate_cam_for_dataset(
+    # if PCM, no need target_layer
+    generate_PCM_cam(
         dataloader=train_loader,
         model=model,
-        target_layers=target_layers,
-        save_dir=save_cam_path,
-        aug=True
+        # target_layers=target_layers,
+        save_dir=save_PCM_cam_path,
     )
+
+    generate_PCM_pseudo_labels(
+        dataloader=train_loader,
+        model=model,
+        save_dir=save_PCM_cam_path,
+        threshold=args.threshold
+    )
+
+    # sliding_window_patch_cam_generate(
+    #     dataloader=train_loader,
+    #     model=model,
+    #     target_layers=target_layers,
+    #     save_dir=save_cam_path,
+    # )
+
+    # save_crop_cam_path = os.path.join(
+    #         os.path.dirname(args.save_cam_path),
+    #         f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_cam_path)}_crop"
+    #     )
+
+    # generate_crop_cam_for_dataset(
+    #     dataloader=train_loader,
+    #     model=model,
+    #     target_layers=target_layers,
+    #     save_dir=save_crop_cam_path,
+    #     aug=True
+    # )
+
+    # sliding_window_cam_generate(
+    #     dataloader=train_loader,
+    #     model=model,
+    #     target_layers=target_layers,
+    #     save_dir=save_crop_cam_path,
+    #     aug=True
+    # )
+
+    # save_pseudo_labels_path = os.path.join(
+    #         os.path.dirname(args.save_pseudo_labels_path),
+    #         f"{args.backbone}_{args.CAM_type}_{args.threshold}_{args.num_epochs}_{os.path.basename(args.save_pseudo_labels_path)}_aug"
+    #     )
+
+    # generate_pseudo_labels(
+    #     dataloader=train_loader,
+    #     model=model,
+    #     target_layers=target_layers,
+    #     save_dir=save_pseudo_labels_path,
+    #     threshold=args.threshold
+    # )
