@@ -21,7 +21,7 @@ class CropDataset(Dataset):
                  mask_transform=None,
                  img_size=(1024, 1024),
                  backbone='sam',
-                 ratio=0.0):
+                 ratio=0.1):
 
         self.img_size = img_size
         self.samples = []
@@ -139,8 +139,6 @@ class CropDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-
-        # Load image
         img = Image.open(sample['image']).convert('RGB')
 
         # Load mask if available
@@ -150,6 +148,80 @@ class CropDataset(Dataset):
         elif sample['label'] == 1 and not sample['mask']:
             # mask=None
             mask = Image.new('L', img.size, 0)
+        else:
+            mask = Image.new('L', img.size, 0)  # Black mask for non-smoke
+
+        img = self.transform(img)
+        mask = self.mask_transform(mask)
+
+        return img, torch.tensor(sample['label'], dtype=torch.long), \
+        os.path.splitext(os.path.basename(sample['image']))[0], mask
+
+
+class mix_CropDataset(Dataset):
+    def __init__(self,
+                 image_dir=None,
+                 mask_dir=None,
+                 weak=False,
+                 label=1,
+                 transform=None,
+                 mask_transform=None,
+                 img_size=(1024, 1024),
+                 ):
+        self.img_size = img_size
+        self.image_dir = image_dir
+        self.mask_dir = mask_dir
+        self.weak = weak
+        self.label = label
+
+        self.samples = []
+        if self.image_dir:
+            for img_name in sorted(os.listdir(image_dir)):
+                if img_name.startswith('.'): continue
+                img_path = os.path.join(image_dir, img_name)
+                if mask_dir:
+                    mask_path = os.path.join(mask_dir, f"mask_{img_name}")
+                else:
+                    mask_path = None
+                if weak:
+                    self.samples.append({
+                        'image': img_path,
+                        'mask': mask_path,
+                        'label': label,
+                        'is_weak': True
+                    })
+                else:
+                    self.samples.append({
+                        'image': img_path,
+                        'mask': mask_path,
+                        'label': label,
+                        'is_weak': False
+                    })
+
+        print("smoke samples:", len(self.samples))
+
+        self.transform = transform or transforms.Compose([
+            transforms.Resize(img_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+
+        self.mask_transform = mask_transform or transforms.Compose([
+            transforms.Resize(img_size, interpolation=Image.NEAREST),
+            transforms.ToTensor()
+        ])
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        img = Image.open(sample['image']).convert('RGB')
+
+        # Load mask if available
+        if sample['label'] == 1 and sample['mask']:
+            mask = Image.open(sample['mask']).convert('L')  # Grayscale
         else:
             mask = Image.new('L', img.size, 0)  # Black mask for non-smoke
 

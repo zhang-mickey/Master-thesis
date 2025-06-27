@@ -33,4 +33,4 @@ pip install ttach
 echo "Environment activated"
 
 
-python training/Weakly-supervised/pseudo_mask.py
+python training/Weakly-supervised/cam_infer.py
