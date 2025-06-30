@@ -88,8 +88,13 @@ sbatch training/jobs/kd.job
 #### 2. Refinement
 
 
-**Cross-View Consistency**
+**Cross-model Consistency** run the scripts `training/jobs/`
 
+```
+sbatch kd.job
+
+sbatch kd_infer.job
+```
 
 **AffinityNet**   run the scripts `post_processing/jobs/`
 ```

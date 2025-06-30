@@ -44,22 +44,18 @@ class SAMFineTuner(nn.Module):
         self.model = sam_model_registry[model_type](checkpoint=checkpoint)
         self.model.to(device)
 
-        # 仅微调部分参数
+        # only fine tune partial parameters
         for param in self.model.image_encoder.parameters():
             param.requires_grad = False
 
         for param in self.model.prompt_encoder.parameters():
             param.requires_grad = False
-
-        # 解冻mask decoder
         for param in self.model.mask_decoder.parameters():
             param.requires_grad = True
 
-        # 创建可学习的任务提示嵌入
         self.task_embedding = nn.Parameter(
-            torch.randn(1, 1, 256, device=device) * 0.02  # 增加维度 [1, 1, 256]
+            torch.randn(1, 1, 256, device=device) * 0.02
         )
-        # 固定位置编码（PE）
         self.fixed_pe = self.model.prompt_encoder.get_dense_pe().to(device)
 
         self.optimizer = torch.optim.Adam([
@@ -70,18 +66,14 @@ class SAMFineTuner(nn.Module):
         self.criterion = nn.BCEWithLogitsLoss(reduction='mean')
 
     def forward(self, images):
-        # 生成图像嵌入
         images = images.to(self.device)
         image_embeddings = self.model.image_encoder(images)
         batch_size = images.shape[0]
 
-        # 准备任务提示 [batch_size, 1, 256]
         sparse_embeddings = self.task_embedding.expand(batch_size, -1, -1)
 
-        # 准备位置编码 (PE)，使用原始维度
         fixed_pe = self.fixed_pe.to(images.device)
 
-        # 准备密集提示嵌入 - 全零 [batch_size, C, H, W]
         dense_prompt_embeddings = torch.zeros(
             batch_size,
             image_embeddings.shape[1],
@@ -90,10 +82,9 @@ class SAMFineTuner(nn.Module):
             device=self.device
         )
 
-        # 预测掩码
         mask_pred, _ = self.model.mask_decoder(
             image_embeddings=image_embeddings,
-            image_pe=fixed_pe,  # 使用原始位置编码
+            image_pe=fixed_pe,
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_prompt_embeddings,
             multimask_output=False,
@@ -112,16 +103,12 @@ class SAMFineTuner(nn.Module):
             gt_masks = masks.to(self.device)
 
             mask_pred = self(images)
-
-            # 调整预测掩码的尺寸以匹配目标掩码(1024x1024)
             mask_pred_resized = F.interpolate(
                 mask_pred,
                 size=(1024, 1024),
                 mode='bilinear',
                 align_corners=False
             )
-
-            # 计算损失 - 确保尺寸匹配
             loss = self.criterion(mask_pred_resized, gt_masks)
 
             self.optimizer.zero_grad()
@@ -165,17 +152,14 @@ class SAMFineTuner(nn.Module):
                 prob_mask = torch.sigmoid(mask_pred_resized)
                 binary_mask = (prob_mask > threshold).float()
 
-                # 计算每个样本的IoU和Dice
                 for j in range(images.shape[0]):
                     pred_mask = binary_mask[j].squeeze().cpu().numpy().astype(np.uint8)
                     gt_mask = gt_masks[j].squeeze().cpu().numpy().astype(np.uint8)
 
-                    # 避免空掩码
                     if np.max(pred_mask) == 0 and np.max(gt_mask) == 0:
                         iou = 1.0
                         dice = 1.0
                     else:
-                        # 计算交集和并集
                         intersection = np.logical_and(pred_mask, gt_mask).sum()
                         union = np.logical_or(pred_mask, gt_mask).sum()
 
@@ -197,16 +181,13 @@ class SAMFineTuner(nn.Module):
 def main():
     args = parse_args()
     print("root_dir:", project_root)
-
-    # 创建数据集
     dataset = CropDataset(
         args.crop_smoke_image_folder,
         args.crop_mask_folder,
     )
 
-    print(f"数据集大小: {len(dataset)}")
+    print(f"samples: {len(dataset)}")
 
-    # 划分数据集
     total_size = len(dataset)
     train_size = int(0.7 * total_size)
     val_size = int(0.15 * total_size)
@@ -216,11 +197,10 @@ def main():
         dataset, [train_size, val_size, test_size]
     )
 
-    print(f"训练集大小: {len(train_subset)}")
-    print(f"验证集大小: {len(val_subset)}")
-    print(f"测试集大小: {len(test_subset)}")
+    print(f"train: {len(train_subset)}")
+    print(f"val: {len(val_subset)}")
+    print(f"test: {len(test_subset)}")
 
-    # 创建数据加载器
     train_loader = DataLoader(
         train_subset,
         batch_size=args.batch_size,
@@ -242,8 +222,6 @@ def main():
         num_workers=4,
         pin_memory=True
     )
-
-    # 初始化微调器
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device: {device}")
 
@@ -255,19 +233,15 @@ def main():
     )
 
     os.makedirs(args.save_dir, exist_ok=True)
-    print(f"模型将保存在: {args.save_dir}")
+    print(f"model save : {args.save_dir}")
 
-    # 训练循环
     best_iou = 0.0
     best_model_path = os.path.join(args.save_dir, "best_model.pth")
 
     for epoch in range(args.epochs):
         print(f"\nEpoch {epoch + 1}/{args.epochs}")
 
-        # 训练
         train_loss = fine_tuner.train_epoch(train_loader)
-
-        # 验证
         val_iou, val_dice = fine_tuner.evaluate(val_loader)
 
         print(f"Epoch {epoch + 1}: Train Loss: {train_loss:.4f}, Val IoU: {val_iou:.4f}, Val Dice: {val_dice:.4f}")
@@ -275,15 +249,13 @@ def main():
         if val_iou > best_iou:
             best_iou = val_iou
             fine_tuner.save_model(best_model_path)
-            print(f"保存最佳模型，IoU: {best_iou:.4f}")
-
-    print("\n在测试集上评估最佳模型...")
+            print(f"save best model，IoU: {best_iou:.4f}")
     checkpoint = torch.load(best_model_path, map_location=fine_tuner.device)
     fine_tuner.model.load_state_dict(checkpoint['model_state_dict'])
     fine_tuner.task_embedding = checkpoint['task_embedding'].to(fine_tuner.device)
 
     test_iou, test_dice = fine_tuner.evaluate(test_loader)
-    print(f"\n最终测试结果 - IoU: {test_iou:.4f}, Dice: {test_dice:.4f}")
+    print(f"\n IoU: {test_iou:.4f}, Dice: {test_dice:.4f}")
 
 
 if __name__ == "__main__":
