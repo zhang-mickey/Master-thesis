@@ -178,9 +178,13 @@ There are several tunable parameters in mask generation
 
 
 
-#####
-# Choosing the layer(s) to extract activations from
+### Choosing the layer(s) to extract activations from
+CAM can be generated using this repo https://github.com/jacobgil/pytorch-grad-cam
+```
+ResNet: target_layers = [model.layer4[-1]]
+ViT:target_layers = [model.blocks[-1].norm1]
 
+```
 # Results
 before vs after
 
