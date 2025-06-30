@@ -1,3 +1,7 @@
+
+# Effectiveness
+<img width="682" alt="image" src="https://github.com/user-attachments/assets/fdda4b2a-5865-494c-aa39-03db5d07d6f1" />
+
 # Master-thesis
 
 Pytorch implementation for Industrial exhaust smoke emission semantic segmentation using image level annotations.
