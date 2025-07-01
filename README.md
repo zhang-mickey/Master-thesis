@@ -1,6 +1,7 @@
 
 # Effectiveness
 <img width="735" alt="image" src="https://github.com/user-attachments/assets/133ba577-9516-42c7-91a7-75ae2911def0" />
+
 # Master-thesis
 
 Pytorch implementation for Industrial exhaust smoke emission semantic segmentation using image level annotations.
@@ -33,7 +34,7 @@ The dataset is captured in specific locations, resulting in low variability in b
 
 **Train**
 
-IJmond video frames.
+IJmond video frames(https://github.com/MultiX-Amsterdam/ijmond-camera-ai/tree/main/).
 
 2488 Image size:[900,900]
 
