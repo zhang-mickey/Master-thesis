@@ -1,4 +1,4 @@
-# Framework
+# Mitigating Spurious Correlations in Weakly Supervised Semantic Segmentation via Cross-Model Consistency Regularization
 <img width="900" alt="image" src="https://github.com/user-attachments/assets/1fdae953-55c3-45f6-bd3b-68caabd66e4c" />
 
 # Effectiveness
@@ -10,15 +10,17 @@ Pytorch implementation for Industrial exhaust smoke emission semantic segmentati
 
 Run on SURF
 
-all the codes are for binary classification and semantic segmentation
+Industrial Exhaust Smoke emission-Oriented Pseudo label Refinement Method
 
 ## Background
 
 Scarcity of pixel-level annotations.
-
+s
 ![image](https://github.com/user-attachments/assets/6aab2ab6-1e8d-47c0-b329-1fd123cd49c7)
 
 Sparse object coverage
+
+over smoothing 
 
 shortcut learning
 
@@ -36,10 +38,13 @@ The dataset is captured in specific locations, resulting in low variability in b
 
 **Train**
 
+the introduction of our dataset(https://ijmondcam.multix.io/)
+
 IJmond video frames(https://github.com/MultiX-Amsterdam/ijmond-camera-ai/tree/main/).
 
-2488 Image size:[900,900]
+(https://github.com/MultiX-Amsterdam/ijmond-camera-monitor/tree/main/dataset/2024-01-22)
 
+2488 Image size:[900,900]
 
 Labeled as Smoke(1556) vs non-Smoke(932) to train a classifier.
 
@@ -102,6 +107,7 @@ sbatch kd.job
 sbatch kd_infer.job
 ```
 
+#### post-processing
 **AffinityNet**   run the scripts `post_processing/jobs/`
 ```
 sbatch train_affinityNet.job
@@ -140,7 +146,7 @@ Resnet50
 
 ##### Consistency Learning
 
-**Boundry-Aware Spurious corelations remove ** 
+**Boundary-Aware Spurious corelations remove ** 
 
 **Motivation**
 CNN-based:better location 

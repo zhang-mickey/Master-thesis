@@ -500,6 +500,8 @@ class VisionTransformer(nn.Module):
         self.pos_drop = nn.Dropout(p=drop_rate)
         self.feature_shape = None
         self._size = img_size // patch_size
+        self.gradients = None
+        self.vit_proj = nn.Conv2d(embed_dim, 2, kernel_size=1)  # 新增投影层
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
@@ -567,7 +569,6 @@ class VisionTransformer(nn.Module):
             x, weights = blk(x)
             attn_weights.append(weights)
             cls_embeddings.append(x[:, 0])
-
         x = self.norm(x)
         cls_embeddings.append(x[:, 0])
         if self.feature_shape is None:
@@ -577,13 +578,13 @@ class VisionTransformer(nn.Module):
         B, num_patches, embed_dim = patch_tokens.shape
         H = W = int(num_patches ** 0.5)
         feature_map = patch_tokens.permute(0, 2, 1).reshape(B, embed_dim, H, W)
-
         return x[:, 0], attn_weights, cls_embeddings, feature_map
 
     def forward(self, x):
         x, attn_weights, _, feature_map = self.forward_features(x)
         x = self.head(x)
-        return x, attn_weights, feature_map
+        feature_map_2ch = self.vit_proj(feature_map)
+        return x, feature_map, feature_map_2ch
 
 
 def _conv_filter(state_dict, patch_size=16):
@@ -598,14 +599,27 @@ def _conv_filter(state_dict, patch_size=16):
 
 @register_model
 def vit_small_patch16_224(pretrained=False, **kwargs):
+    model = VisionTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True, img_size=512,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if pretrained:
-        # NOTE my scale was wrong for original weights, leaving this here until I have better ones for this model
-        kwargs.setdefault('qk_scale', 768 ** -0.5)
-    model = VisionTransformer(patch_size=16, embed_dim=768, depth=8, num_heads=8, mlp_ratio=3., **kwargs)
-    model.default_cfg = default_cfgs['vit_small_patch16_224']
-    if pretrained:
-        load_pretrained(
-            model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
+        checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                       "pretrained", "vit_small_p16_224-15ec54c9.pth")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+        if "pos_embed" in checkpoint:
+            checkpoint["pos_embed"] = resize_pos_embed(checkpoint["pos_embed"], model.pos_embed)
+        # Remove the classifier head from the checkpoint
+        checkpoint.pop("head.weight", None)
+        checkpoint.pop("head.bias", None)
+
+        model.load_state_dict(checkpoint, strict=False)
+
+        # Reinitialize the classification head to match num_classes
+        model.head = nn.Linear(768, num_classes)
     return model
 
 
@@ -629,12 +643,21 @@ def backbone_vit_base_patch16_224(pretrained=True, num_classes=1, **kwargs):
         checkpoint.pop("head.weight", None)
         checkpoint.pop("head.bias", None)
 
-        # Load remaining weights
         model.load_state_dict(checkpoint, strict=False)
 
-        # Reinitialize the classification head to match `num_classes`
-        model.head = nn.Linear(768, num_classes)  # Adjust to your dataset's class count
+        # Reinitialize the classification head to match num_classes
+        model.head = nn.Linear(768, num_classes)
     return model
+
+
+def compute_gradcam(activations, grads):
+    # 平均每个通道上的梯度：全局平均池化
+    weights = grads.mean(dim=(2, 3), keepdim=True)  # [B, C, 1, 1]
+    cam = (weights * activations).sum(dim=1)  # [B, H, W]
+    cam = F.relu(cam)  # 只保留正值
+    cam = cam - cam.min(dim=(1, 2), keepdim=True)[0]
+    cam = cam / (cam.max(dim=(1, 2), keepdim=True)[0] + 1e-8)
+    return cam
 
 
 @register_model
