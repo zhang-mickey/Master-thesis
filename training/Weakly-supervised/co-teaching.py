@@ -140,7 +140,7 @@ def parse_args():
 
     # parser.add_argument("--backbone", type=str, default="vgg16d",
     #                     help="choose backone")
-    parser.add_argument('--kd_alpha', default=1, type=float, help='ratio for transfer loss')
+    parser.add_argument('--kd_alpha', default=0.5, type=float, help='ratio for transfer loss')
 
     parser.add_argument('--manual_seed', default=42, type=int, help='Manually set random seed')
 
@@ -217,57 +217,216 @@ if __name__ == "__main__":
 
     model_vit = choose_backbone(args.backbone)
     model_resnet50 = choose_backbone("resnet50")
+
+    # model_aug=choose_backbone(args.backbone)
     model_vit = model_vit.to(device)
-
-    save_resnet_path = os.path.join(
-        os.path.dirname(args.save_model_path),
-        f"{args.backbone}_{args.CAM_type}_2_model_raw.pth"
-    )
-    model_resnet50.load_state_dict(torch.load(save_resnet_path))
     model_resnet50 = model_resnet50.to(device)
-
+    # model_aug=model_aug.to(device)
+    combined_parameters = list(model_vit.parameters()) + list(model_resnet50.parameters())
+    # combined_parameters = list(model.parameters()) + list(model_aug.parameters())
     model_vit.train()
+    # model_aug.train()
+    model_resnet50.train()
+
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model_vit.parameters(), lr=args.lr)
+    criterion_kd = nn.MSELoss()
+    optimizer = optim.AdamW(combined_parameters, lr=args.lr)
 
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
 
     avg_meter = AverageMeter('loss', 'kd_loss', 'cls_loss', 'cls_aug_loss', 'f1', 'accuracy', 'loss_entropy', 'bg_loss',
                              'consistency_loss')
 
-    if args.backbone == 'vit_b' or args.backbone == 'vit_s':
+    if args.backbone == 'resnet101' or args.backbone == 'resnet38d' or args.backbone == 'resnet50':
 
         cls_loss_history = []
         bg_loss_history = []
         train_accuracies = []
-        model_resnet50.eval()
         for epoch in range(1, (args.num_epochs + 1)):
 
             avg_meter.pop()
             for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
                 images, labels = images.to(device), labels.float().to(device)
+                augmented_images = augment_batch(images)
                 mask = mask.to(device)
+
                 optimizer.zero_grad()
-                # forward teacher (no grad)
-                with torch.no_grad():
-                    logits_resnet, featmap_resnet, intermediate_feature = model_resnet50(images)
-                    featmap_resnet = featmap_resnet.view(featmap_resnet.size(0), featmap_resnet.size(1), -1)
-                    featmap_resnet_inter = intermediate_feature.view(intermediate_feature.size(0),
-                                                                     intermediate_feature.size(1), -1)
-                # forward student
+
+                logits, featmap, _ = model(images)
+                logits_aug, featmap_aug, _ = model_aug(augmented_images)
+
+                logits = logits.squeeze(1)
+                logits_aug = logits_aug.squeeze(1)
+
+                acc = calculate_accuracy(logits, labels)
+                f1 = calculate_f1_score(logits, labels)
+                cls_loss = criterion(logits, labels)
+                cls_aug_loss = criterion(logits_aug, labels)
+
+                featmap = featmap.clone()
+                featmap[featmap < 0] = 0
+                max_values = torch.max(torch.max(featmap, dim=3)[0], dim=2)[0]
+                featmap = featmap / (max_values.unsqueeze(2).unsqueeze(3) + 1e-8)
+
+                featmap_aug_teacher = featmap_aug.clone().detach()
+                featmap_aug_teacher[featmap_aug_teacher < 0] = 0
+                max_values = torch.max(torch.max(featmap_aug_teacher, dim=3)[0], dim=2)[0]
+                featmap_aug_teacher = featmap_aug_teacher / (max_values.unsqueeze(2).unsqueeze(3) + 1e-8)
+
+                print("featmap", featmap.shape)
+                print("featmap_aug_teacher", featmap_aug_teacher.shape)
+
+                kd_loss = criterion_kd(featmap, featmap_aug_teacher)
+
+                loss = cls_aug_loss + kd_loss
+
+                loss.backward()
+
+                optimizer.step()
+
+                avg_meter.add({'loss': loss.item(),
+                               'f1': f1,
+                               'kd_loss': kd_loss.item(),
+                               'cls_loss': cls_loss.item(),
+                               'cls_aug_loss': cls_aug_loss.item(),
+                               'accuracy': acc})
+
+            avg_loss, kd_loss, cls_aug_loss, cls_loss, avg_acc, avg_f1 = avg_meter.get('loss', 'kd_loss',
+                                                                                       'cls_aug_loss', 'cls_loss',
+                                                                                       'accuracy', 'f1')
+            print(
+                f"Epoch [{epoch}/{args.num_epochs}], Loss: {avg_loss:.4f},kd_loss:{kd_loss:.4f},cls_aug_loss:{cls_aug_loss:.4f},cls Loss: {cls_loss:.4f}, Avg Accuracy: {avg_acc:.2f}%,Avg f1:{avg_f1:.4f}")
+
+            cls_loss_history.append(avg_loss)
+            # bg_loss_history.append(avg_bg_loss)
+            train_accuracies.append(avg_acc)
+            scheduler.step()
+
+        save_path = os.path.join(
+            os.path.dirname(args.save_model_path),
+            f"{args.backbone}_{args.CAM_type}_{args.num_epochs}_{os.path.basename(args.save_model_path)}"
+        )
+        save_loss_path = os.path.join(
+            os.path.dirname(args.save_visualization_path),
+            f"loss_{args.backbone}_{args.num_epochs}_{os.path.basename(args.save_visualization_path)}"
+        )
+
+        torch.save(model.state_dict(), save_path)
+        print("Training complete! Model saved.")
+
+        model.load_state_dict(torch.load(save_path))
+        model.eval()
+        model.cuda()
+
+        print("Starting test phase...")
+        test_loss = 0.0
+        test_accuracy = 0.0
+        test_predictions = []
+        test_ground_truth = []
+
+        with torch.no_grad():
+            for batch_idx, (images, labels, _, mask) in enumerate(test_loader):
+                images, labels = images.to(device), labels.float().to(device)
+
+                outputs = model(images)
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]
+
+                outputs = outputs.squeeze(1)
+
+                loss = criterion(outputs, labels)
+                acc = calculate_accuracy(outputs, labels)
+
+                test_loss += loss.item()
+                test_accuracy += acc
+                predictions = (torch.sigmoid(outputs) > 0.5).float()
+                test_predictions.extend(predictions.cpu().numpy())
+                test_ground_truth.extend(labels.cpu().numpy())
+
+                if (batch_idx + 1) % 50 == 0:
+                    print(
+                        f"Test Batch [{batch_idx + 1}/{len(test_loader)}], ClS Loss: {loss.item():.4f}, Accuracy: {acc:.2f}%")
+
+        avg_test_loss = test_loss / len(test_loader)
+        avg_test_accuracy = test_accuracy / len(test_loader)
+
+        # precision = precision_score(test_ground_truth, test_predictions, zero_division=0)
+        # recall = recall_score(test_ground_truth, test_predictions, zero_division=0)
+        f1 = f1_score(test_ground_truth, test_predictions, zero_division=0)
+        # conf_matrix = confusion_matrix(test_ground_truth, test_predictions)
+        positive_count = sum(test_ground_truth)
+        negative_count = len(test_ground_truth) - positive_count
+
+        print("\n===== Test Results =====")
+        print(f"Average CLS Loss: {avg_test_loss:.4f}")
+        print(f"Positive Class Count: {int(positive_count)}")
+        print(f"Negative Class Count: {int(negative_count)}")
+        print(f"Accuracy: {avg_test_accuracy:.2f}%")
+        # print(f"Precision: {precision:.4f}")
+        # print(f"Recall: {recall:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+
+
+    elif args.backbone == 'vit_b' or args.backbone == 'vit_s':
+
+        cls_loss_history = []
+        bg_loss_history = []
+        train_accuracies = []
+        for epoch in range(1, (args.num_epochs + 1)):
+
+            avg_meter.pop()
+            data_load_start = time.time()
+
+            for batch_idx, (images, labels, _, mask) in enumerate(train_loader):
+                images, labels = images.to(device), labels.float().to(device)
+                # augmented_images = augment_batch(images)
+                mask = mask.to(device)
+
+                optimizer.zero_grad()
+
                 logits_vit, attns, featmap_vit = model_vit(images)
+
+                logits_resnet, featmap_resnet, intermediate_feature = model_resnet50(images)
+
+                # featmap_resnet = featmap_resnet.detach()
+                # logits_resnet = logits_resnet.detach()
+
+                featmap_resnet = featmap_resnet.view(featmap_resnet.size(0), featmap_resnet.size(1), -1)
+                featmap_resnet_inter = intermediate_feature.view(intermediate_feature.size(0),
+                                                                 intermediate_feature.size(1), -1)
+
+                # proj_resnet = nn.Conv1d(2048, 128, kernel_size=1).to(device)
+                # proj_vit = nn.Conv2d(768, 512, 1).to(device)
+
                 featmap_vit = featmap_vit.view(featmap_vit.size(0), featmap_vit.size(1), -1)
+                # print("featmap_vit",featmap_vit.shape)
+                # print("featmap_resnet",featmap_resnet.shape)
+                # print("featmap_resnet_inter",featmap_resnet_inter.shape)
+                # featmap_resnet_inter=proj_resnet(featmap_resnet_inter)
+                # featmap_vit=proj_vit(featmap_vit)
+                # similarity_matrix = F.cosine_similarity(
+                #     featmap_vit.unsqueeze(2),
+                #     featmap_resnet.unsqueeze(1),
+                #     dim=3
+                # )
+
+                # kd_loss = 1 - similarity_matrix.mean()
+                # featmap_vit torch.Size([8, 768, 1024])
+                # featmap_resnet torch.Size([8, 2, 1024])
+                # featmap_resnet_inter torch.Size([8, 2048, 1024])
 
                 kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine', mode='global',
                                              batch_idx=batch_idx)
 
-                # classification loss (only student logits)
                 logits_vit = logits_vit.squeeze(1)
+                logits_resnet = logits_resnet.squeeze(1)
 
                 acc = calculate_accuracy(logits_vit, labels)
                 f1 = calculate_f1_score(logits_vit, labels)
                 cls_vit_loss = criterion(logits_vit, labels)
-                loss = args.kd_alpha * kd_loss + cls_vit_loss
+                cls_resnet_loss = criterion(logits_resnet, labels)
+
+                loss = cls_resnet_loss + args.kd_alpha * kd_loss + cls_vit_loss
 
                 loss.backward()
                 optimizer.step()

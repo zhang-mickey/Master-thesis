@@ -99,12 +99,16 @@ sbatch training/jobs/kd.job
 #### 2. Refinement
 
 
-**Cross-model Consistency** run the scripts `training/jobs/`
+**Teacher Student Knowledge transfer** run the scripts `training/jobs/`
 
 ```
 sbatch kd.job
+```
 
-sbatch kd_infer.job
+**Teacher Student Knowledge transfer** run the scripts `training/jobs/`
+
+```
+sbatch co-teaching.job
 ```
 
 #### post-processing
