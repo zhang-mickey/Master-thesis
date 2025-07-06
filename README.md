@@ -1,5 +1,5 @@
 # Mitigating Spurious Correlations in Weakly Supervised Semantic Segmentation via Cross-Model Consistency Regularization
-![image](https://github.com/user-attachments/assets/438a2d14-9359-453a-b2dd-6f2ec04dda4a)
+![image](https://github.com/user-attachments/assets/0983c612-3836-4601-8156-1745bfc3554e)
 
 # Effectiveness
 <img width="735" alt="image" src="https://github.com/user-attachments/assets/133ba577-9516-42c7-91a7-75ae2911def0" />
@@ -15,8 +15,10 @@ Industrial Exhaust Smoke emission-Oriented Pseudo label Refinement Method
 ## Background
 
 Scarcity of pixel-level annotations.
-s
-![image](https://github.com/user-attachments/assets/6aab2ab6-1e8d-47c0-b329-1fd123cd49c7)
+
+
+![image](https://github.com/user-attachments/assets/97dfb59d-7e37-4cb6-b20d-0e9dd99ec332)
+
 
 Sparse object coverage
 
@@ -157,7 +159,7 @@ CNN-based:better location
 
 Transformer-based :more clear boundary
 
-<img width="908" alt="image" src="https://github.com/user-attachments/assets/077cacbd-1f8d-48ca-b895-ca458b342d4c" />
+![image](https://github.com/user-attachments/assets/cab5c84e-fb4d-4c7e-899f-f4051c069b30)
 
 ResNet-based architecture as the teacher
 
@@ -204,7 +206,7 @@ ViT:target_layers = [model.blocks[-1].norm1]
 # Results
 before vs after
 
-![image](https://github.com/user-attachments/assets/deece368-0e24-4b2f-8635-5758d6035225)
+![image](https://github.com/user-attachments/assets/8c66ec3e-48f1-4323-8f51-d78060d210bb)
 
 The generated CAMs on our custom dataset.
 
