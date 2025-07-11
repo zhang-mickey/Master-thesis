@@ -1,5 +1,5 @@
 # Mitigating Spurious Correlations in Weakly Supervised Semantic Segmentation via Cross-Model Consistency Regularization
-![image](https://github.com/user-attachments/assets/0983c612-3836-4601-8156-1745bfc3554e)
+<img width="1282" height="493" alt="image" src="https://github.com/user-attachments/assets/357db8b3-3b81-4bb7-ac8e-5c4274c5d3b5" />
 
 # Effectiveness
 <img width="735" alt="image" src="https://github.com/user-attachments/assets/133ba577-9516-42c7-91a7-75ae2911def0" />
