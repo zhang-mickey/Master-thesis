@@ -5,15 +5,17 @@ import os
 import cv2
 import argparse
 import torch
+import sys
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.abspath(os.path.dirname(__file__) + "/..")
+sys.path.append(project_root)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="threshold_experiment")
 
-    parser.add_argument("--threshold", type=float, default=0.3, help="threshold to pesudo label")
+    parser.add_argument("--threshold", type=float, default=0.4, help="threshold to pesudo label")
 
     parser.add_argument("--backbone", type=str, default="transformer", help="threshold to pesudo label")
 
@@ -29,9 +31,11 @@ def parse_args():
                         help="CAM type")
 
     parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
+
     parser.add_argument("--sam_model", type=str, default="vit_h",
                         choices=['vit_b', 'vit_l', 'vit_h'],
                         help="SAM model type")
+
     parser.add_argument("--sam_checkpoint", type=str,
                         default="pretrained/sam_vit_h_4b8939.pth",
                         help="SAM checkpoint path")
@@ -46,41 +50,47 @@ def init_sam_predictor(args):
 
     mask_generator = SamAutomaticMaskGenerator(
         model=sam,
-        points_per_side=64,  # how densely points are sampled
-        pred_iou_thresh=0.82,  # Threshold for removing low quality or duplicate masks
+        points_per_side=8,  # how densely points are sampled
+        pred_iou_thresh=0.7,  # Threshold for removing low quality or duplicate masks
         stability_score_thresh=0.85,
         crop_n_layers=0,
         crop_n_points_downscale_factor=2,
         min_mask_region_area=20,  # filter small region
         output_mode="binary_mask"
     )
+
     return mask_generator
 
 
-def sam_postprocessing(image, cam, mask_generator, threshold=0.3):
+def sam_postprocessing(image, cam, mask_generator, threshold=0.3, strategy=None):
+    # multiple masks
     masks = mask_generator.generate(image)
+    # initial seed
     cam = (cam[1] > 0.3).astype(np.uint8)
 
     valid_masks = []
     for mask in masks:
         mask_size_ratio = np.sum(mask['segmentation']) / (cam.shape[0] * cam.shape[1])
-        if mask_size_ratio > 0.3:
+        if mask_size_ratio > 0.5:
             continue
-        # largest intersection
         intersection = np.sum(cam & mask['segmentation'])
         union = np.sum(cam | mask['segmentation']) + 1e-6
         iou = intersection / union
-        # overlap = np.sum(cam * mask['segmentation']) / np.sum(mask['segmentation'])
         if iou > threshold:
             valid_masks.append(mask['segmentation'])
 
+    used_source = "sam" if valid_masks else "cam"
     if valid_masks:
         combined_mask = np.logical_or.reduce(valid_masks)
     else:
         combined_mask = cam.astype(bool)
-        # combined_mask = np.zeros_like(cam, dtype=bool)
 
-    return combined_mask.astype(np.uint8)
+    if strategy == "and":
+        combined_mask = np.logical_and(combined_mask, cam).astype(np.uint8)
+    elif strategy == "or":
+        combined_mask = np.logical_or(combined_mask, cam).astype(np.uint8)
+
+    return combined_mask.astype(np.uint8), used_source
 
 
 def compute_iou(pred_mask, gt_mask):
@@ -97,9 +107,10 @@ if __name__ == "__main__":
 
     image_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/")
 
-    cam_dir = os.path.join(project_root, "final_model/vit_s_GradCAM_0.3_3_pseudo_labels_kd/")
+    cam_dir = os.path.join(project_root, "final_model/crf_vit_s_GradCAM_0.3_3_crf_fusion_pseudo_labels/")
     # cam_dir=os.path.join(project_root, "result/resnet101_GradCAM_0.3_10_pseudo_labels/")
-    pseudo_dir = os.path.join(project_root, "final_model/vit_s_GradCAM_0.3_3_pseudo_labels_kd/")
+    pseudo_dir = os.path.join(project_root, "final_model/crf_vit_s_GradCAM_0.3_3_crf_fusion_pseudo_labels/")
+
     mask_dir = os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_masks/")
 
     save_pseudo_labels_path = os.path.join(
@@ -135,7 +146,9 @@ if __name__ == "__main__":
     fixed_mIOU = []
     # pseudo_mIOU=[]
     sam_fixed_mIOU = []
-    # for i in range(15):
+
+    sam_count = 0
+    cam_count = 0
     for i in range(len(samples)):
         sample = samples[i]
 
@@ -150,7 +163,7 @@ if __name__ == "__main__":
         gt_mask = cv2.imread(sample['mask'], cv2.IMREAD_GRAYSCALE)
         gt_mask = (gt_mask > 127).astype(np.uint8)
 
-        # Calculate IoU with fixed threshold of 0.3
+        # raw CAM
         fixed_pred = (cam >= args.threshold).astype(np.uint8)
         fixed_iou = compute_iou(fixed_pred, gt_mask)
         fixed_mIOU.append(fixed_iou)
@@ -159,15 +172,21 @@ if __name__ == "__main__":
 
         probs[0] = 1 - cam  # Background probability
         probs[1] = cam  # Foreground probability
-        probs[0] = np.power(probs[0], 4)
+        # probs[0]=np.power(probs[0],4)
         probs = probs / (probs.sum(axis=0, keepdims=True) + 1e-8)
 
-        sam_mask = sam_postprocessing(
+        sam_mask, source = sam_postprocessing(
             orig_img,
             probs,
             sam_predictor,
-            threshold=args.threshold
+            threshold=args.threshold,
+            strategy="or"
         )
+        if source == "sam":
+            sam_count += 1
+        else:
+            cam_count += 1
+
         sam_iou = compute_iou(sam_mask, gt_mask)
         sam_fixed_mIOU.append(sam_iou)
 
@@ -203,11 +222,12 @@ if __name__ == "__main__":
         #                 sam_mask
         #             )
 
-    # fixed_mean_iou=np.mean(fixed_mIOU)
+    print(f"Used SAM: {sam_count}, Used CAM: {cam_count}")
+    fixed_mean_iou = np.mean(fixed_mIOU)
     # pseudp_mean_iou=np.mean(pseudo_mIOU)
     sam_fixed_mean_iou = np.mean(sam_fixed_mIOU)
 
-    # print(f"Mean IoU with (fixed threshold=0.3): {fixed_mean_iou:.4f}")
+    print(f"Mean IoU with (fixed threshold=0.3): {fixed_mean_iou:.4f}")
     # print(f"Mean IoU with (pseudo label): {pseudp_mean_iou:.4f}")
     print(f"Mean IoU with sam (fixed threshold=0.3): {sam_fixed_mean_iou:.4f}")
 

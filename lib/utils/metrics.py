@@ -1,6 +1,8 @@
 import torch
 import numpy as np
+import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 
 def linear_CKA(X, Y):
@@ -26,37 +28,61 @@ def linear_CKA(X, Y):
     return cka
 
 
-def compute_similarity(vit, resnet, metric='cosine'):
-    vit = vit.view(vit.size(0), vit.size(1), -1)
-    resnet = resnet.view(resnet.size(0), resnet.size(1), -1)
-
-    if metric == 'cosine':
+def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0):
+    if metric == 'cosine' and mode == 'channel':
+        vit = vit.view(vit.size(0), vit.size(1), -1)
+        resnet = resnet.view(resnet.size(0), resnet.size(1), -1)
         sim = F.cosine_similarity(vit.unsqueeze(2), resnet.unsqueeze(1), dim=3)
+
+        cos_sim_np = sim.detach().cpu().numpy().flatten()
+        plt.figure(figsize=(6, 4))
+        plt.hist(cos_sim_np, bins=50, color='skyblue', edgecolor='black')
+        plt.title(f"Channel-wise Cosine Similarity\n({batch_idx})")
+        plt.xlabel("Cosine Similarity")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+
+        plt.savefig(f"cosine_sim_{batch_idx}.png")
+        plt.close()
         return 1 - sim.mean()
 
-    elif metric == 'cka':
-        return 1 - linear_CKA(vit, resnet)  # 返回 dissimilarity
+    elif metric == 'cosine' and mode == 'global':
+        if vit.shape[1] != resnet.shape[1]:
+            # Linear expects [B, L, C], so permute first
+            resnet = resnet.permute(0, 2, 1)  # [B, L, C_in]
+            proj = nn.Linear(resnet.shape[-1], vit.shape[1]).to(resnet.device)  # C_in -> C_out
+            resnet = proj(resnet)  # [B, L, C_out]
+            resnet = resnet.permute(0, 2, 1)  # [B, C_out, L]
+        vit = vit.reshape(vit.size(0), -1)
+        resnet = resnet.reshape(resnet.size(0), -1)
+        sim = F.cosine_similarity(vit, resnet, dim=1)
+        return 1 - sim.mean()
+    elif metric == 'cosine' and mode == 'spatial':
 
-    elif metric == 'euclidean':
-        diff = vit.unsqueeze(2) - resnet.unsqueeze(1)
-        dist = torch.norm(diff, p=2, dim=3)
-        return dist.mean()
+        vit = vit.permute(0, 2, 1)  # [B, L, C1]
+        resnet = resnet.permute(0, 2, 1)  # [B, L, C2]
+        if vit.shape[2] != resnet.shape[2]:
+            proj = nn.Linear(resnet.shape[-1], vit.shape[-1]).to(resnet.device)
+            resnet = proj(resnet)
 
-    elif metric == 'mse':
-        diff = vit.unsqueeze(2) - resnet.unsqueeze(1)
-        mse = (diff ** 2).mean(dim=-1)
-        return mse.mean()
-
-    elif metric == 'pearson':
-        vit_centered = vit.unsqueeze(2) - vit.unsqueeze(2).mean(dim=3, keepdim=True)
-        resnet_centered = resnet.unsqueeze(1) - resnet.unsqueeze(1).mean(dim=3, keepdim=True)
-        numerator = (vit_centered * resnet_centered).sum(dim=3)
-        denominator = torch.sqrt((vit_centered ** 2).sum(dim=3) * (resnet_centered ** 2).sum(dim=3) + 1e-8)
-        sim = numerator / (denominator + 1e-8)
+        sim = F.cosine_similarity(vit, resnet, dim=-1)  # [B, L] every patch
         return 1 - sim.mean()
 
-    else:
-        raise ValueError(f"Unknown metric: {metric}")
+    elif metric == 'l1' and mode == 'global':
+        vit_flat = vit.reshape(vit.size(0), -1)
+        resnet_flat = resnet.reshape(resnet.size(0), -1)
+        if vit_flat.shape[1] != resnet_flat.shape[1]:
+            proj = nn.Linear(resnet_flat.shape[1], vit_flat.shape[1]).to(resnet.device)
+            resnet_flat = proj(resnet_flat)
+        return torch.abs(vit_flat - resnet_flat).mean()
+
+    elif metric == 'l2' and mode == 'global':
+        vit_flat = vit.reshape(vit.size(0), -1)
+        resnet_flat = resnet.reshape(resnet.size(0), -1)
+        if vit_flat.shape[1] != resnet_flat.shape[1]:
+            proj = nn.Linear(resnet_flat.shape[1], vit_flat.shape[1]).to(resnet.device)
+            resnet_flat = proj(resnet_flat)
+        return torch.norm(vit_flat - resnet_flat, p=2, dim=1).mean()
 
 
 class AverageMeter:
