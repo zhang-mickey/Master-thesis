@@ -4,6 +4,34 @@
 # Effectiveness
 <img width="735" alt="image" src="https://github.com/user-attachments/assets/133ba577-9516-42c7-91a7-75ae2911def0" />
 
+**Motivation**
+
+CNN-based:better location 
+
+Transformer-based :more clear boundary
+
+![image](https://github.com/user-attachments/assets/cab5c84e-fb4d-4c7e-899f-f4051c069b30)
+
+ResNet-based architecture as the teacher
+
+Transformer-based architecture as the student model
+
+
+# Methodology
+
+## Cross-Architecture Feature Alignment Strategies
+
+| Shape               | Keeps Channel Info? | Keeps Spatial Info? | Semantically Rich? |
+|---------------------|---------------------|---------------------|--------------------|
+| `[B, C × H × W]`    | ✅ Yes              | ✅ Yes              | ✅ Yes             |
+| `[B, H × W]`        | ❌ No               | ✅ Yes              | ❌ No              |
+| `[B, C, C]`         | ✅ Yes              | ❌ No               | ❌ No              |
+
+choose B, C × H × W]
+
+then feature projection layer
+
+
 # Master-thesis
 
 Pytorch implementation for Industrial exhaust smoke emission semantic segmentation using image level annotations.
@@ -142,17 +170,6 @@ Resnet50
 
 **Boundary-Aware Spurious corelations remove ** 
 
-**Motivation**
-
-CNN-based:better location 
-
-Transformer-based :more clear boundary
-
-![image](https://github.com/user-attachments/assets/cab5c84e-fb4d-4c7e-899f-f4051c069b30)
-
-ResNet-based architecture as the teacher
-
-Transformer-based architecture as the student model
 
 
 **Which Part of the Teacher Provides a More Informative
