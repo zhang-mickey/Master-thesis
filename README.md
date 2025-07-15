@@ -121,16 +121,10 @@ sbatch train_affinityNet.job
 sbatch infer_affinityNet.job
 ```
 
-
-
-
 **3. Evaluate**
 
 
 
-
-## Supervised learning
-DeeplabV3+
 
 ## multi-stage Weakly supervised learning 
 ![image](https://github.com/user-attachments/assets/d566e36b-8010-4805-a35c-ddb1940b28b5)
@@ -138,23 +132,18 @@ DeeplabV3+
 ### classifier
 ViT
 
-Resnet101
-
 Resnet50
 
-### Refinement
+## Refinement
 
-#### optimizing the feature representation for classifier
+### optimizing the feature representation for classifier
 
-
-<img width="1305" alt="image" src="https://github.com/user-attachments/assets/62eef665-af05-45a2-bb75-4a13913339e4" />
-
-
-##### Consistency Learning
+#### Consistency Learning
 
 **Boundary-Aware Spurious corelations remove ** 
 
 **Motivation**
+
 CNN-based:better location 
 
 Transformer-based :more clear boundary
@@ -165,9 +154,22 @@ ResNet-based architecture as the teacher
 
 Transformer-based architecture as the student model
 
-dual-model architecture using Vision Transformer (ViT) and ResNet50 backbones
 
-#### optimizing CAM
+**Which Part of the Teacher Provides a More Informative
+Knowledge Source?**
+
+Logits-based:Not suitable for dense prediction tasks, as it lose s spatial information and ignores how the internal representations are formed.
+
+Feature-based:
+
+**Cross-Architecture Feature Alignment Strategies**
+
+Globa
+
+channel
+
+spatial 
+
 
 
 
