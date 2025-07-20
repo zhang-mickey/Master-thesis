@@ -32,12 +32,14 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
     if metric == 'cosine' and mode == 'channel':
         vit = vit.view(vit.size(0), vit.size(1), -1)
         resnet = resnet.view(resnet.size(0), resnet.size(1), -1)
+        # vit = F.normalize(vit, p=2, dim=1)
+        # resnet = F.normalize(resnet, p=2, dim=1)
         sim = F.cosine_similarity(vit.unsqueeze(2), resnet.unsqueeze(1), dim=3)
 
         cos_sim_np = sim.detach().cpu().numpy().flatten()
         plt.figure(figsize=(6, 4))
         plt.hist(cos_sim_np, bins=50, color='skyblue', edgecolor='black')
-        plt.title(f"Channel-wise Cosine Similarity\n({batch_idx})")
+        plt.title(f"Channel-wise xCosine Similarity\n({batch_idx})")
         plt.xlabel("Cosine Similarity")
         plt.ylabel("Frequency")
         plt.grid(True)
@@ -55,12 +57,18 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
             resnet = resnet.permute(0, 2, 1)  # [B, C_out, L]
         vit = vit.reshape(vit.size(0), -1)
         resnet = resnet.reshape(resnet.size(0), -1)
+        #l2_norm
+        # vit = F.normalize(vit, p=2, dim=1)
+        # resnet = F.normalize(resnet, p=2, dim=1)
+
         sim = F.cosine_similarity(vit, resnet, dim=1)
         return 1 - sim.mean()
     elif metric == 'cosine' and mode == 'spatial':
 
         vit = vit.permute(0, 2, 1)  # [B, L, C1]
         resnet = resnet.permute(0, 2, 1)  # [B, L, C2]
+        # vit = F.normalize(vit, p=2, dim=1)
+        # resnet = F.normalize(resnet, p=2, dim=1)
         if vit.shape[2] != resnet.shape[2]:
             proj = nn.Linear(resnet.shape[-1], vit.shape[-1]).to(resnet.device)
             resnet = proj(resnet)
@@ -71,6 +79,7 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
     elif metric == 'l1' and mode == 'global':
         vit_flat = vit.reshape(vit.size(0), -1)
         resnet_flat = resnet.reshape(resnet.size(0), -1)
+
         if vit_flat.shape[1] != resnet_flat.shape[1]:
             proj = nn.Linear(resnet_flat.shape[1], vit_flat.shape[1]).to(resnet.device)
             resnet_flat = proj(resnet_flat)

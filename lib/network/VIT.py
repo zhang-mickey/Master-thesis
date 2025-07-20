@@ -501,7 +501,8 @@ class VisionTransformer(nn.Module):
         self.feature_shape = None
         self._size = img_size // patch_size
         self.gradients = None
-        self.vit_proj = nn.Conv2d(embed_dim, 2, kernel_size=1)  # 新增投影层
+        #the features are mapped into the same dimension by a linear projection
+        self.vit_proj = nn.Conv2d(embed_dim, 2, kernel_size=1) 
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
