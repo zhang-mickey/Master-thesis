@@ -32,14 +32,12 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
     if metric == 'cosine' and mode == 'channel':
         vit = vit.view(vit.size(0), vit.size(1), -1)
         resnet = resnet.view(resnet.size(0), resnet.size(1), -1)
-        # vit = F.normalize(vit, p=2, dim=1)
-        # resnet = F.normalize(resnet, p=2, dim=1)
         sim = F.cosine_similarity(vit.unsqueeze(2), resnet.unsqueeze(1), dim=3)
 
         cos_sim_np = sim.detach().cpu().numpy().flatten()
         plt.figure(figsize=(6, 4))
         plt.hist(cos_sim_np, bins=50, color='skyblue', edgecolor='black')
-        plt.title(f"Channel-wise xCosine Similarity\n({batch_idx})")
+        plt.title(f"Channel-wise Cosine Similarity\n({batch_idx})")
         plt.xlabel("Cosine Similarity")
         plt.ylabel("Frequency")
         plt.grid(True)
@@ -57,18 +55,12 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
             resnet = resnet.permute(0, 2, 1)  # [B, C_out, L]
         vit = vit.reshape(vit.size(0), -1)
         resnet = resnet.reshape(resnet.size(0), -1)
-        #l2_norm
-        # vit = F.normalize(vit, p=2, dim=1)
-        # resnet = F.normalize(resnet, p=2, dim=1)
-
         sim = F.cosine_similarity(vit, resnet, dim=1)
         return 1 - sim.mean()
     elif metric == 'cosine' and mode == 'spatial':
 
         vit = vit.permute(0, 2, 1)  # [B, L, C1]
         resnet = resnet.permute(0, 2, 1)  # [B, L, C2]
-        # vit = F.normalize(vit, p=2, dim=1)
-        # resnet = F.normalize(resnet, p=2, dim=1)
         if vit.shape[2] != resnet.shape[2]:
             proj = nn.Linear(resnet.shape[-1], vit.shape[-1]).to(resnet.device)
             resnet = proj(resnet)
@@ -76,10 +68,40 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
         sim = F.cosine_similarity(vit, resnet, dim=-1)  # [B, L] every patch
         return 1 - sim.mean()
 
+    elif mode == 'spatial_map':
+        vit_map = vit.mean(dim=1)  # [B, H, W]
+        resnet_map = resnet.mean(dim=1)  # [B, H, W]
+
+        vit_map_flat = vit_map.view(vit_map.size(0), -1)
+        resnet_map_flat = resnet_map.view(resnet_map.size(0), -1)
+
+        if metric == 'cosine':
+            sim = F.cosine_similarity(vit_map_flat, resnet_map_flat, dim=1)
+            return 1 - sim.mean()
+        elif metric == 'l1':
+            return torch.abs(vit_map_flat - resnet_map_flat).mean()
+        elif metric == 'l2':
+            return torch.norm(vit_map_flat - resnet_map_flat, p=2, dim=1).mean()
+
+    elif metric == 'inner' and mode == 'channel':
+        # flatten spatial dims
+        vit = vit.view(vit.size(0), vit.size(1), -1)  # [B, C, H*W]
+        resnet = resnet.view(resnet.size(0), resnet.size(1), -1)
+
+        # compute Gram matrix [B, C, C]
+        vit_gram = torch.bmm(vit, vit.transpose(1, 2))  # [B, C, C]
+        resnet_gram = torch.bmm(resnet, resnet.transpose(1, 2))  # [B, C, C]
+
+        # normalize
+        # vit_gram = F.normalize(vit_gram.view(vit.size(0), -1), dim=1)
+        # resnet_gram = F.normalize(resnet_gram.view(resnet.size(0), -1), dim=1)
+
+        sim = F.cosine_similarity(vit_gram, resnet_gram, dim=1)  # [B]
+        return 1 - sim.mean()
+
     elif metric == 'l1' and mode == 'global':
         vit_flat = vit.reshape(vit.size(0), -1)
         resnet_flat = resnet.reshape(resnet.size(0), -1)
-
         if vit_flat.shape[1] != resnet_flat.shape[1]:
             proj = nn.Linear(resnet_flat.shape[1], vit_flat.shape[1]).to(resnet.device)
             resnet_flat = proj(resnet_flat)
@@ -92,6 +114,21 @@ def compute_similarity(vit, resnet, metric='cosine', mode='channel', batch_idx=0
             proj = nn.Linear(resnet_flat.shape[1], vit_flat.shape[1]).to(resnet.device)
             resnet_flat = proj(resnet_flat)
         return torch.norm(vit_flat - resnet_flat, p=2, dim=1).mean()
+
+    elif mode == 'logits':
+        if metric == 'cosine':
+            sim = F.cosine_similarity(vit, resnet, dim=1)
+            return 1 - sim.mean()
+        elif metric == 'kl':
+            vit_soft = F.log_softmax(vit, dim=1)
+            resnet_soft = F.softmax(resnet, dim=1)
+            return F.kl_div(vit_soft, resnet_soft, reduction='batchmean')
+        elif metric == 'l1':
+            return torch.abs(vit - resnet).mean()
+        elif metric == 'l2':
+            return torch.norm(vit - resnet, p=2, dim=1).mean()
+        else:
+            raise ValueError(f"Unsupported metric '{metric}' for logits")
 
 
 class AverageMeter:

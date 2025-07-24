@@ -57,6 +57,7 @@ def generate_clip_cam(model, image_tensor, prompts, reshape_size=(7, 7)):
     text_features = model.encode_text(text_tokens)  # [T, 512]
     text_features /= text_features.norm(dim=-1, keepdim=True)
 
+    ## patch_tokens [B, N, D] text_features: [T, D] T: number of prompts
     sim = patch_tokens @ text_features.T  # [B, N, T]
     sim = sim[0, :, 0]  # use first text prompt
     cam = sim.reshape(*reshape_size).cpu().numpy()
@@ -104,8 +105,12 @@ if __name__ == "__main__":
     image_path = "smoke-segmentation.v5i.coco-segmentation/cropped_images/kooks_1__2024-04-14T16-27-29Z_frame_1405_jpg.rf.6ad77a02e4d9070083046a7d106d36dd_896_384.png"
     mask_path = "smoke-segmentation.v5i.coco-segmentation/cropped_masks/mask_kooks_1__2024-04-14T16-27-29Z_frame_1405_jpg.rf.6ad77a02e4d9070083046a7d106d36dd_896_384.png"
 
+    # image_path="smoke-segmentation.v5i.coco-segmentation/cropped_images/kooks_1__2024-11-04T10-44-09Z_frame_464_jpg.rf.a6c659b5080db6ced2ba5ccaf373e79a_256_256.png"
+    # mask_path="smoke-segmentation.v5i.coco-segmentation/cropped_masks/mask_kooks_1__2024-11-04T10-44-09Z_frame_464_jpg.rf.a6c659b5080db6ced2ba5ccaf373e79a_256_256.png"
+
     # prompt = ["a photo of smoke"]
-    prompt = ["a photo of pollution smoke from industrial emissions"]
+    # prompt = ["a photo of pollution smoke from industrial emissions"]
+    prompt = ["a photo of grey industrial smoke rising from factory chimneys"]
     image_pil, image_tensor = load_image(image_path, resize_size=224)
     cam = generate_clip_cam(model, image_tensor, prompt, reshape_size=(7, 7))
     visualize(image_pil, cam, mask_path=mask_path)
