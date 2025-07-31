@@ -4,6 +4,13 @@
 # Effectiveness
 <img width="735" alt="image" src="https://github.com/user-attachments/assets/133ba577-9516-42c7-91a7-75ae2911def0" />
 
+
+# Paper 
+```
+https://doi.org/10.48550/arXiv.2507.21959
+```
+
+
 **Motivation**
 
 CNN-based:better location 
