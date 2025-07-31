@@ -2,7 +2,7 @@ import random
 import numpy as np
 from PIL import Image
 #from scipy import misc
-# import mmcv
+import mmcv
 import imageio
 
 from PIL import ImageFilter, ImageOps, Image

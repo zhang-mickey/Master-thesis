@@ -10,7 +10,6 @@ from lib.utils.augmentation import *
 import torch.nn.functional as F
 import math
 
-
 # def reshape_transform(tensor, height=14, width=14):
 #     #(batch_size, num_patches, hidden_dim).
 #     result = tensor[:, 1 :  , :].reshape(tensor.size(0),
@@ -24,6 +23,9 @@ import math
 # reshape the output tensor from a Vision Transformer (ViT) model
 # (or similar transformer-based models) so that it can be visualized or processed
 # in a way similar to convolutional neural network (CNN) feature maps.
+class_list = ["bg", 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'table',
+              'dog', 'horse', 'motorbike', 'person', 'plant', 'sheep', 'sofa', 'train', 'tvmonitor']
+
 
 def reshape_transform(tensor, height=16, width=16):
     """
@@ -97,6 +99,15 @@ class ClassifierOutputTarget:
         return model_output[:, self.category]
 
 
+class SegmentationOutputTarget:
+    def __init__(self, category):
+        self.category = category
+
+    def __call__(self, model_output):
+        # model_output: [B, C, H, W]
+        return model_output[:, self.category, :, :].mean()
+
+
 def get_cam_for_image(image_tensor, model, target_layers=None, target_category=None):
     model.eval()
     # print([layer.__class__.__name__ for layer in target_layers])
@@ -118,7 +129,7 @@ def get_cam_for_image(image_tensor, model, target_layers=None, target_category=N
     else:
         pred_class = target_category
 
-    print(f"target_category: {target_category}")
+    # print(f"target_category: {target_category}")
     # Generate CAM
     grayscale_cam = cam(image_tensor, [ClassifierOutputTarget(target_category)])
     grayscale_cam = grayscale_cam[0, :]  # Get CAM for first image in batch
@@ -184,9 +195,9 @@ def generate_PCM_cam(dataloader,
             grayscale_cam = (class_activation - class_activation.min()) / (
                         class_activation.max() - class_activation.min() + 1e-8)
 
-            print("pred shape:", pred.shape)  # [1, num_classes]
-            print("cam_map shape:", cam_map.shape)  # [C, H, W] after cam_map = cam_map[0]
-            print("pred_class:", pred_class)
+            # print("pred shape:", pred.shape)            # [1, num_classes]
+            # print("cam_map shape:", cam_map.shape)      # [C, H, W] after cam_map = cam_map[0]
+            # print("pred_class:", pred_class)
 
             image_np = image_tensor[0].cpu().detach().numpy().transpose(1, 2, 0)
             image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
@@ -373,8 +384,8 @@ def generate_PCM_pseudo_labels(dataloader, model, save_dir, threshold):
                     heatmap
                 )
 
-                print(type(grayscale_cam))  # Should be <class 'numpy.ndarray'>
-                print(grayscale_cam.dtype)  # Should be float32
+                # print(type(grayscale_cam))  # Should be <class 'numpy.ndarray'>
+                # print(grayscale_cam.dtype)  # Should be float32
                 np.save(
                     os.path.join(save_dir, f"fusion_cam_{img_id}.npy"),
                     fused_cam
@@ -386,21 +397,26 @@ def generate_PCM_pseudo_labels(dataloader, model, save_dir, threshold):
         print(f"Scale {scale}: Mean IoU = {mean_iou:.4f}")
 
 
-def sliding_window_cam(image_tensor, model, target_layers, return_patches=False):
-    """
-    image_tensor: [1, C, H, W] - a single image tensor
-    returns: full CAM of shape [H, W]
-    """
+def sliding_window_cam(image_tensor, model, target_layers,
+                       window_ratio=0.25, stride_ratio=0.125,
+                       min_window=64, min_stride=32, return_patches=False):
     _, C, H, W = image_tensor.shape
-    window_size = 256
-    stride = 128
+    window_size = max(int(min(H, W) * window_ratio), min_window)
+    stride = max(int(min(H, W) * stride_ratio), min_stride)
 
     full_cam = np.zeros((H, W))
     count_map = np.zeros((H, W))
     patches = []
+    tops = list(range(0, H - window_size + 1, stride))
+    if (H - window_size) % stride != 0:
+        tops.append(H - window_size)
 
-    for top in range(0, H - window_size + 1, stride):
-        for left in range(0, W - window_size + 1, stride):
+    lefts = list(range(0, W - window_size + 1, stride))
+    if (W - window_size) % stride != 0:
+        lefts.append(W - window_size)
+
+    for top in tops:
+        for left in lefts:
             patch = image_tensor[:, :, top:top + window_size, left:left + window_size]
 
             cam_image, grayscale_cam, pred_class = get_cam_for_image(patch, model, target_layers)
@@ -458,7 +474,7 @@ def sliding_window_patch_cam_generate(dataloader, model,
                                       save_dir=None,
                                       aug=False,
                                       num_samples_per_batch=3,
-                                      max_batches=90):
+                                      max_batches=1):
     device = next(model.parameters()).device
 
     if save_dir:
@@ -496,71 +512,107 @@ def sliding_window_cam_generate(dataloader, model,
                                 target_layers,
                                 save_dir=None,
                                 aug=False,
-                                num_samples_per_batch=3,
-                                max_batches=90):
+                                ):
     device = next(model.parameters()).device
 
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    batch_count = 0
+    scales = [0.5, 1.0, 1.5, 2.0]
+    scale_metrics = {s: {'iou_sum': 0.0, 'count': 0} for s in scales}
+    scale_metrics['avg'] = {'iou_sum': 0.0, 'count': 0}
 
     for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
-        if max_batches is not None and batch_count >= max_batches:
-            break
-
+        B, C, h_orig, w_orig = images.shape
         images = images.to(device)
-        # Limit to num_samples_per_batch
-        num_samples = min(num_samples_per_batch, len(images))
-        images = images[:num_samples]
-        masks = masks[:num_samples]
+        for j in range(B):
+            scale_cams = []
+            scale_strs = []
+            image = images[j]
+            image_id = image_ids[j]
+            mask = masks[j]
+            gt_mask = mask.squeeze().cpu().numpy()
+            gt_mask = (gt_mask > 0.5).astype(np.float32)
 
-        fig, axs = plt.subplots(num_samples, 3, figsize=(30, 5 * num_samples))
+            for scale in scales:
+                h_new, w_new = int(h_orig * scale), int(w_orig * scale)
+                image_resized = F.interpolate(image.unsqueeze(0), size=(h_new, w_new), mode='bilinear',
+                                              align_corners=False)
 
-        for i, (image, mask, label) in enumerate(zip(images, masks, labels)):
-            image_tensor = image.unsqueeze(0)  # Add batch dimension
+                sliding_cam = sliding_window_cam(image_resized, model, target_layers)
 
-            cam_image, grayscale_cam, pred_class = get_cam_for_image(image_tensor, model, target_layers)
+                if scale != 1.0:
+                    sliding_cam = cv2.resize(sliding_cam, (w_orig, h_orig), interpolation=cv2.INTER_LINEAR)
 
-            #
-            sliding_cam = sliding_window_cam(image_tensor, model, target_layers)
+                pseudo_label = (sliding_cam > 0.3).astype(np.float32)
 
-            # Convert image to NumPy for display
-            image_np = image.cpu().numpy().transpose(1, 2, 0)
-            image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())  # Normalize
+                intersection = np.logical_and(gt_mask, pseudo_label).sum()
+                union = np.logical_or(gt_mask, pseudo_label).sum()
+                iou = intersection / (union + 1e-8)
 
-            # Convert mask to NumPy
-            mask_np = mask[i].cpu().numpy()
-            if mask_np.ndim == 3:  # [1, H, W]
-                mask_np = mask_np.squeeze(0)
-            if mask_np.max() > 1:
-                mask_np = mask_np / 255.0
+                scale_metrics[scale]['iou_sum'] += iou
+                scale_metrics[scale]['count'] += 1
+                scale_strs.append(str(scale))
+                scale_cams.append(sliding_cam)
 
-                # Plot original image
-            axs[i, 0].imshow(image_np)
-            axs[i, 0].set_title(f"Original (Label: {label.item()})")
-            axs[i, 0].axis('off')
+            fused_cam = np.mean(scale_cams, axis=0)
+            pseudo_label = (fused_cam > 0.3).astype(np.float32)
 
-            # Plot CAM
-            axs[i, 1].imshow(cam_image)
-            axs[i, 1].set_title(f"CAM (Pred: {pred_class})")
-            axs[i, 1].axis('off')
+            intersection = np.logical_and(gt_mask, pseudo_label).sum()
+            union = np.logical_or(gt_mask, pseudo_label).sum()
+            iou = intersection / (union + 1e-8)
 
-            # Plot  sliding window cam
-            axs[i, 2].imshow(sliding_cam, cmap='jet')
-            axs[i, 2].set_title("Sliding Window CAM")
-            axs[i, 2].axis('off')
+            scale_metrics['avg']['iou_sum'] += iou
+            scale_metrics['avg']['count'] += 1
 
-        plt.tight_layout()
+    print("\nScale-wise IOU:")
+    for scale, metrics in scale_metrics.items():
+        avg_iou = metrics['iou_sum'] / metrics['count']
+        print(f"Scale {scale}: Average IOU = {avg_iou:.4f}")
 
-        if save_dir:
-            plt.savefig(f"{save_dir}/sw_cam_batch_{batch_idx}.png")
-            plt.close()
-        else:
-            plt.show()
+    #     fig, axs = plt.subplots(num_samples, 3, figsize=(30, 5 * num_samples))
 
-        batch_count += 1
-    return 0
+    #     for i, (image,mask,label) in enumerate(zip(images, masks, labels)):
+    #         image_tensor = image.unsqueeze(0)  # Add batch dimension
+
+    #         cam_image, grayscale_cam, pred_class = get_cam_for_image(image_tensor, model, target_layers)
+    #         sliding_cam = sliding_window_cam(image_tensor, model, target_layers)
+
+    #         # Convert image to NumPy for display
+    #         image_np = image.cpu().numpy().transpose(1, 2, 0)
+    #         image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())  # Normalize
+
+    #         # Convert mask to NumPy
+    #         mask_np = mask[i].cpu().numpy()
+    #         if mask_np.ndim == 3:  # [1, H, W]
+    #             mask_np = mask_np.squeeze(0)
+    #         if mask_np.max() > 1:
+    #             mask_np = mask_np / 255.0
+
+    #         # Plot original image
+    #         axs[i, 0].imshow(image_np)
+    #         axs[i, 0].set_title(f"Original (Label: {label.item()})")
+    #         axs[i, 0].axis('off')
+
+    #         # Plot CAM
+    #         axs[i, 1].imshow(cam_image)
+    #         axs[i, 1].set_title(f"CAM (Pred: {pred_class})")
+    #         axs[i, 1].axis('off')
+
+    #         # Plot  sliding window cam
+    #         axs[i, 2].imshow(sliding_cam, cmap='jet')
+    #         axs[i, 2].set_title("Sliding Window CAM")
+    #         axs[i, 2].axis('off')
+    #     plt.tight_layout()
+
+    #     if save_dir:
+    #         plt.savefig(f"{save_dir}/sw_cam_batch_{batch_idx}.png")
+    #         plt.close()
+    #     else:
+    #         plt.show()
+
+    #     batch_count += 1
+    # return 0
 
 
 def generate_cam_for_dataset(dataloader, model,
@@ -576,7 +628,7 @@ def generate_cam_for_dataset(dataloader, model,
 
     batch_count = 0
 
-    for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
+    for batch_idx, (image_ids, images, masks, labels) in enumerate(dataloader):
         if max_batches is not None and batch_count >= max_batches:
             break
 
@@ -611,7 +663,9 @@ def generate_cam_for_dataset(dataloader, model,
 
                 # Plot original image
             axs[i, 0].imshow(image_np)
-            axs[i, 0].set_title(f"Original (Label: {label.item()})")
+            label_indices = (label > 0).nonzero(as_tuple=True)[0].tolist()
+            label_names = [class_list[idx] for idx in label_indices]
+            axs[i, 0].set_title(f"Original (Labels: {', '.join(label_names)})")
             axs[i, 0].axis('off')
 
             # Plot CAM
@@ -621,7 +675,9 @@ def generate_cam_for_dataset(dataloader, model,
 
             # Plot aug image
             axs[i, 2].imshow(aug_np)
-            axs[i, 2].set_title(f"Aug Image (Label: {label.item()})")
+            label_indices = (label > 0).nonzero(as_tuple=True)[0].tolist()
+            label_names = [class_list[idx] for idx in label_indices]
+            axs[i, 2].set_title(f"Aug (Labels: {', '.join(label_names)})")
             axs[i, 2].axis('off')
 
             # Plot aug_CAM
@@ -654,7 +710,7 @@ def generate_crop_cam_for_dataset(dataloader, model,
 
     batch_count = 0
 
-    for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
+    for batch_idx, (image_ids, images, masks, labels) in enumerate(dataloader):
         if max_batches is not None and batch_count >= max_batches:
             break
 
@@ -689,7 +745,9 @@ def generate_crop_cam_for_dataset(dataloader, model,
 
                 # Plot original image
             axs[i, 0].imshow(image_np)
-            axs[i, 0].set_title(f"Original (Label: {label.item()})")
+            label_indices = (label > 0).nonzero(as_tuple=True)[0].tolist()
+            label_names = [class_list[idx] for idx in label_indices]
+            axs[i, 0].set_title(f"Original (Labels: {', '.join(label_names)})")
             axs[i, 0].axis('off')
 
             # Plot CAM
@@ -699,7 +757,9 @@ def generate_crop_cam_for_dataset(dataloader, model,
 
             # Plot aug image
             axs[i, 2].imshow(aug_np)
-            axs[i, 2].set_title(f"Aug Image (Label: {label.item()})")
+            label_indices = (label > 0).nonzero(as_tuple=True)[0].tolist()
+            label_names = [class_list[idx] for idx in label_indices]
+            axs[i, 2].set_title(f"Aug (Labels: {', '.join(label_names)})")
             axs[i, 2].axis('off')
 
             # Plot aug_CAM
@@ -730,7 +790,7 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
     scale_metrics = {s: {'iou_sum': 0.0, 'count': 0} for s in scales}
     scale_metrics['avg'] = {'iou_sum': 0.0, 'count': 0}
 
-    for batch_idx, (images, labels, image_ids, masks) in enumerate(dataloader):
+    for batch_idx, (image_ids, images, masks, labels) in enumerate(dataloader):
         B, C, h_orig, w_orig = images.shape
         images = images.to(device)
         # if batch_idx==1:
@@ -741,6 +801,8 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                 image = images[j]
                 image_id = image_ids[j]
                 mask = masks[j]
+                gt_mask = mask.squeeze().cpu().numpy()
+                gt_mask = (gt_mask > 0.5).astype(np.float32)
                 for scale in scales:
                     h_new, w_new = int(h_orig * scale), int(w_orig * scale)
                     image_resized = F.interpolate(image.unsqueeze(0), size=(h_new, w_new), mode='bilinear',
@@ -758,9 +820,6 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                         grayscale_cam = cv2.resize(grayscale_cam, (w_orig, h_orig), interpolation=cv2.INTER_LINEAR)
 
                     pseudo_label = (grayscale_cam > threshold).astype(np.float32)
-
-                    gt_mask = mask.squeeze().cpu().numpy()
-                    gt_mask = (gt_mask > 0.5).astype(np.float32)
 
                     intersection = np.logical_and(gt_mask, pseudo_label).sum()
                     union = np.logical_or(gt_mask, pseudo_label).sum()
@@ -846,8 +905,8 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                     heatmap
                 )
 
-                print(type(grayscale_cam))  # Should be <class 'numpy.ndarray'>
-                print(grayscale_cam.dtype)  # Should be float32
+                # print(type(grayscale_cam))  # Should be <class 'numpy.ndarray'>
+                # print(grayscale_cam.dtype)  # Should be float32
                 np.save(
                     os.path.join(save_dir, f"fusion_cam_{img_id}.npy"),
                     fused_cam

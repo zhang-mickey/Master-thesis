@@ -1,0 +1,49 @@
+#!/bin/bash
+#set job requirement
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=02:00:00
+#SBATCH --mem=122000M
+#SBATCH --output=train-%A.out
+#SBATCH --error=train-%A.err
+
+module purge
+# Use available modules
+module load 2023
+module load Anaconda3
+
+# Ensure conda is initialized
+source "$(conda info --base)/etc/profile.d/conda.sh"
+
+if [ ! -d "$HOME/.conda/envs/supervised-learning" ]; then
+    conda env create -f voc2012/environment.yml
+fi
+echo "Environment init"
+
+conda activate supervised-learning
+
+# Install required packages
+pip install opencv-python
+pip install torchvision
+pip install pycocotools
+pip install ttach
+pip install git+https://github.com/RogerQi/pydensecrf.git
+pip install pytorch-grad-cam
+pip install mmcv-lite
+# Install SWIG if needed
+pip install swig
+
+echo "Building bilateral filter wrapper..."
+cd wrapper
+swig -python -c++ bilateralfilter.i
+# Use --user flag to install in user directory
+python setup.py install --user
+cd ..
+
+echo "Environment activated"
+
+# Add the wrapper directory to PYTHONPATH
+export PYTHONPATH="$PWD/wrapper:$PYTHONPATH"
+
+python train_voc/kd.py

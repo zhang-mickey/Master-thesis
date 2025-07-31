@@ -9,18 +9,34 @@ import torchvision
 from PIL import Image
 from torchvision import transforms as T
 import random
+import torchvision.transforms.functional as TF
 
 class_list = ["bg", 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'table',
               'dog', 'horse', 'motorbike', 'person', 'plant', 'sheep', 'sofa', 'train', 'tvmonitor']
 
 
 def load_img_name_list(img_name_list_path):
-    img_name_list = np.loadtxt(img_name_list_path, dtype=str)
+    img_name_list = np.loadtxt(img_name_list_path, dtype=str, usecols=0)
     return img_name_list
 
 
-def load_cls_label_list(name_list_dir):
-    return np.load(os.path.join(name_list_dir, 'cls_labels.npy'), allow_pickle=True).item()
+# def load_cls_label_list(name_list_dir):
+
+#     return np.load(os.path.join(name_list_dir,'cls_labels_onehot.npy'), allow_pickle=True).item()
+
+def load_cls_label_list_from_txt(txt_path, num_classes=21):
+    label_dict = {}
+    with open(txt_path, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            if not parts:
+                continue
+            img_name = parts[0]
+            labels = list(map(int, parts[1:])) if len(parts) > 1 else []
+            onehot = np.zeros(num_classes, dtype=np.uint8)
+            onehot[labels] = 1
+            label_dict[img_name] = onehot
+    return label_dict
 
 
 class VOC12Dataset(Dataset):
@@ -37,14 +53,19 @@ class VOC12Dataset(Dataset):
         self.stage = stage
         self.img_dir = os.path.join(root_dir, 'JPEGImages')
         self.label_dir = os.path.join(root_dir, 'SegmentationClassAug')
-        self.name_list_dir = os.path.join(name_list_dir, split + '.txt')
+        if split == 'train':
+            split_file = 'train_aug_num.txt'  # use augmented list
+        else:
+            split_file = split + '.txt'
+
+        self.name_list_dir = os.path.join(name_list_dir, split_file)
         self.name_list = load_img_name_list(self.name_list_dir)
 
     def __len__(self):
         return len(self.name_list)
 
     def __getitem__(self, idx):
-        _img_name = self.name_list[idx]
+        _img_name = str(self.name_list[idx])
         img_name = os.path.join(self.img_dir, _img_name + '.jpg')
         image = np.asarray(imageio.imread(img_name))
 
@@ -91,11 +112,11 @@ class VOC12ClsDataset(VOC12Dataset):
         self.num_classes = num_classes
         # self.color_jittor = transforms.PhotoMetricDistortion()
 
-        self.gaussian_blur = transforms.GaussianBlur
-        self.solarization = transforms.Solarization(p=0.2)
+        self.gaussian_blur = GaussianBlur
+        self.solarization = Solarization(p=0.2)
 
-        self.label_list = load_cls_label_list(name_list_dir=name_list_dir)
-
+        # self.label_list = load_cls_label_list(name_list_dir=name_list_dir)
+        self.label_list = load_cls_label_list_from_txt(os.path.join(name_list_dir, 'train_cls.txt'))
         self.normalize = T.Compose([
             T.ToTensor(),
             T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
@@ -139,12 +160,12 @@ class VOC12ClsDataset(VOC12Dataset):
         if self.aug:
 
             if self.rescale_range:
-                image = transforms.random_scaling(image, scale_range=self.rescale_range)
+                image = random_scaling(image, scale_range=self.rescale_range)
             if self.img_fliplr:
-                image = transforms.random_fliplr(image)
+                image = random_fliplr(image)
             if self.crop_size:
-                image, img_box = transforms.random_crop(image, crop_size=self.crop_size, mean_rgb=[0, 0, 0],
-                                                        ignore_index=self.ignore_index)
+                image, img_box = random_crop(image, crop_size=self.crop_size, mean_rgb=[0, 0, 0],
+                                             ignore_index=self.ignore_index)
 
             local_image = self.local_view(Image.fromarray(image))
             image = self.global_view1(Image.fromarray(image))
@@ -213,9 +234,15 @@ class VOC12SegDataset(VOC12Dataset):
         self.rescale_range = rescale_range
         self.crop_size = crop_size
         self.img_fliplr = img_fliplr
-        self.color_jittor = transforms.PhotoMetricDistortion()
-
-        self.label_list = load_cls_label_list(name_list_dir=name_list_dir)
+        self.color_jittor = PhotoMetricDistortion()
+        if stage == "train":
+            label_file = "train_cls.txt"
+        elif stage == "val":
+            label_file = "val_cls.txt"
+        elif stage == "test":
+            label_file = "test_cls.txt"
+            # self.label_list = load_cls_label_list(name_list_dir=name_list_dir)
+        self.label_list = load_cls_label_list_from_txt(os.path.join(name_list_dir, label_file))
 
     def __len__(self):
         return len(self.name_list)
@@ -223,19 +250,24 @@ class VOC12SegDataset(VOC12Dataset):
     def __transforms(self, image, label):
         if self.aug:
             if self.img_fliplr:
-                image, label = transforms.random_fliplr(image, label)
+                image, label = random_fliplr(image, label)
             image = self.color_jittor(image)
             if self.crop_size:
-                image, label = transforms.random_crop(image, label, crop_size=self.crop_size,
-                                                      mean_rgb=[123.675, 116.28, 103.53],
-                                                      ignore_index=self.ignore_index)
+                image, label, _ = random_crop(image, label, crop_size=self.crop_size,
+                                              mean_rgb=[123.675, 116.28, 103.53], ignore_index=self.ignore_index)
         '''
         if self.stage != "train":
             image = transforms.img_resize_short(image, min_size=min(self.resize_range))
         '''
-        image = transforms.normalize_img(image)
-        ## to chw
-        image = np.transpose(image, (2, 0, 1))
+
+        image = TF.resize(Image.fromarray(image), size=(512, 512))
+        label = TF.resize(Image.fromarray(label), size=(512, 512), interpolation=Image.NEAREST)
+
+        image = np.array(image)
+        label = np.array(label)
+
+        image = normalize_img(image)
+        image = np.transpose(image, (2, 0, 1))  # to CHW
 
         return image, label
 

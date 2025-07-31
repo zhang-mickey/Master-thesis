@@ -1,0 +1,1175 @@
+Environment init
+Requirement already satisfied: opencv-python in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (4.10.0.84)
+Requirement already satisfied: numpy>=1.21.2 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from opencv-python) (1.23.1)
+Requirement already satisfied: torchvision in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (0.18.1)
+Requirement already satisfied: numpy in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torchvision) (1.23.1)
+Requirement already satisfied: torch==2.3.1 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torchvision) (2.3.1)
+Requirement already satisfied: pillow!=8.3.*,>=5.3.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torchvision) (11.2.1)
+Requirement already satisfied: filelock in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (3.18.0)
+Requirement already satisfied: typing-extensions>=4.8.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (4.14.0)
+Requirement already satisfied: sympy in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (1.14.0)
+Requirement already satisfied: networkx in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (3.4.2)
+Requirement already satisfied: jinja2 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (3.1.6)
+Requirement already satisfied: fsspec in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (2025.5.1)
+Requirement already satisfied: nvidia-cuda-nvrtc-cu12==12.1.105 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (12.1.105)
+Requirement already satisfied: nvidia-cuda-runtime-cu12==12.1.105 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (12.1.105)
+Requirement already satisfied: nvidia-cuda-cupti-cu12==12.1.105 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (12.1.105)
+Requirement already satisfied: nvidia-cudnn-cu12==8.9.2.26 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (8.9.2.26)
+Requirement already satisfied: nvidia-cublas-cu12==12.1.3.1 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (12.1.3.1)
+Requirement already satisfied: nvidia-cufft-cu12==11.0.2.54 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (11.0.2.54)
+Requirement already satisfied: nvidia-curand-cu12==10.3.2.106 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (10.3.2.106)
+Requirement already satisfied: nvidia-cusolver-cu12==11.4.5.107 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (11.4.5.107)
+Requirement already satisfied: nvidia-cusparse-cu12==12.1.0.106 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (12.1.0.106)
+Requirement already satisfied: nvidia-nccl-cu12==2.20.5 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (2.20.5)
+Requirement already satisfied: nvidia-nvtx-cu12==12.1.105 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (12.1.105)
+Requirement already satisfied: triton==2.3.1 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from torch==2.3.1->torchvision) (2.3.1)
+Requirement already satisfied: nvidia-nvjitlink-cu12 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from nvidia-cusolver-cu12==11.4.5.107->torch==2.3.1->torchvision) (12.9.86)
+Requirement already satisfied: MarkupSafe>=2.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from jinja2->torch==2.3.1->torchvision) (3.0.2)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from sympy->torch==2.3.1->torchvision) (1.3.0)
+Requirement already satisfied: pycocotools in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (2.0.8)
+Requirement already satisfied: matplotlib>=2.1.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from pycocotools) (3.10.1)
+Requirement already satisfied: numpy in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from pycocotools) (1.23.1)
+Requirement already satisfied: contourpy>=1.0.1 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (1.3.1)
+Requirement already satisfied: cycler>=0.10 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (4.56.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (1.4.8)
+Requirement already satisfied: packaging>=20.0 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (24.1)
+Requirement already satisfied: pillow>=8 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (11.2.1)
+Requirement already satisfied: pyparsing>=2.3.1 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (3.2.1)
+Requirement already satisfied: python-dateutil>=2.7 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from matplotlib>=2.1.0->pycocotools) (2.9.0.post0)
+Requirement already satisfied: six>=1.5 in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (from python-dateutil>=2.7->matplotlib>=2.1.0->pycocotools) (1.16.0)
+Requirement already satisfied: ttach in /gpfs/home5/zzhang4/.conda/envs/supervised-learning/lib/python3.10/site-packages (0.0.3)
+Environment activated
+json_path: /gpfs/home5/zzhang4/Masterthesis/smoke-segmentation.v5i.coco-segmentation/test/_annotations.coco.json
+image_folder: /gpfs/home5/zzhang4/Masterthesis/smoke-segmentation.v5i.coco-segmentation/test/
+non_smoke_image_folder: /gpfs/home5/zzhang4/Masterthesis/lib/dataset/frames/
+smoke5k: False
+smoke5k_path: /gpfs/home5/zzhang4/Masterthesis/SMOKE5K/train/
+Rise: False
+Rise_path: /gpfs/home5/zzhang4/Masterthesis/Rise/Strong_negative_frames/
+Dutch: True
+Dutch_negative_path: /gpfs/home5/zzhang4/Masterthesis/frames/manual_negative/
+Dutch_positive_path: /gpfs/home5/zzhang4/Masterthesis/frames/manual_positive/
+save_pseudo_labels_path: /gpfs/home5/zzhang4/Masterthesis/result/pseudo_labels
+save_cam_path: /gpfs/home5/zzhang4/Masterthesis/result/cam
+crop_smoke_image_folder: /gpfs/home5/zzhang4/Masterthesis/smoke-segmentation.v5i.coco-segmentation/cropped_images/
+crop_mask_folder: /gpfs/home5/zzhang4/Masterthesis/smoke-segmentation.v5i.coco-segmentation/cropped_masks/
+crop_non_smoke_folder: /gpfs/home5/zzhang4/Masterthesis/smoke-segmentation.v5i.coco-segmentation/non_smoke_images/
+use_crop: True
+batch_size: 8
+CAM_type: GradCAM
+num_epochs: 3
+img_size: 512
+crop_size: 512
+num_class: 1
+save_model_path: /gpfs/home5/zzhang4/Masterthesis/model/model_classification_kd.pth
+backbone: vit_s
+manual_seed: 42
+threshold: 0.3
+supervised smoke samples: 2180
+corped_image 2180
+ijmond positive 2180
+ijmond negative 2180
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+Model type: <class 'lib.network.VIT.VisionTransformer'>
+Target layers: [LayerNorm((768,), eps=1e-06, elementwise_affine=True)]
+
+Scale-wise IoU Results:
+Scale 0.5: Mean IoU = 0.4053
+Scale 1.0: Mean IoU = 0.4571
+Scale 1.5: Mean IoU = 0.4560
+Scale 2.0: Mean IoU = 0.4352
+Scale avg: Mean IoU = 0.4819
+
+JOB STATISTICS
+==============
+Job ID: 13287178
+Cluster: snellius
+User/Group: zzhang4/zzhang4
+State: COMPLETED (exit code 0)
+Nodes: 1
+Cores per node: 18
+CPU Utilized: 01:15:59
+CPU Efficiency: 6.77% of 18:42:54 core-walltime
+Job Wall-clock time: 01:02:23
+Memory Utilized: 1.48 GB
+Memory Efficiency: 2.44% of 60.55 GB (60.55 GB/node)

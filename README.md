@@ -11,6 +11,7 @@ https://doi.org/10.48550/arXiv.2507.21959
 ```
 
 
+
 **Motivation**
 
 CNN-based:better location 
@@ -69,6 +70,13 @@ spurious corelations
 
 
 # Preparations
+## voc2012
+
+```https://drive.google.com/file/d/1uh5bWXvLOpE-WZUUtO77uwCB4Qnh6d7X/view
+
+tar -xzvf  VOCdevkit.tar.gz
+
+```
 
 ## Dataset description
 The dataset is captured in specific locations, resulting in low variability in background contexts
