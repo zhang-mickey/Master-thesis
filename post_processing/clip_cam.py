@@ -10,6 +10,23 @@ import os
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
+
+
+class LearnablePrompt(torch.nn.Module):
+    def __init__(self, clip_model, num_tokens=5, class_token="smoke"):
+        super().__init__()
+        self.num_tokens = num_tokens
+        self.clip_model = clip_model
+        self.ctx = torch.nn.Parameter(torch.randn(num_tokens, clip_model.ln_final.weight.shape[0]))  # [num_tokens, D]
+        self.class_token = class_token
+
+    def forward(self):
+        # get the embedding of the class token
+        with torch.no_grad():
+            class_embed = self.clip_model.encode_text(clip.tokenize(self.class_token).to(self.ctx.device))  # [1, D]
+        # concatenate
+        return torch.cat([self.ctx, class_embed], dim=0)  # [num_tokens+1, D]
+
 # ========== Patch token extraction ==========
 @torch.no_grad()
 def get_patch_tokens(model, image_tensor):
@@ -54,6 +71,7 @@ def generate_clip_cam(model, image_tensor, prompts, reshape_size=(7, 7)):
 
     # Encode text
     text_tokens = clip.tokenize(prompts).to(device)
+
     text_features = model.encode_text(text_tokens)  # [T, 512]
     text_features /= text_features.norm(dim=-1, keepdim=True)
 

@@ -140,7 +140,7 @@ def parse_args():
 
     # parser.add_argument("--backbone", type=str, default="vgg16d",
     #                     help="choose backone")
-    parser.add_argument('--kd_alpha', default=0.5, type=float, help='ratio for transfer loss')
+    parser.add_argument('--kd_alpha', default=1, type=float, help='ratio for transfer loss')
 
     parser.add_argument('--manual_seed', default=42, type=int, help='Manually set random seed')
 
@@ -258,8 +258,12 @@ if __name__ == "__main__":
                 logits_vit, attns, featmap_vit = model_vit(images)
                 featmap_vit = featmap_vit.view(featmap_vit.size(0), featmap_vit.size(1), -1)
 
-                kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine', mode='global',
+                # feature level
+                kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine', mode='spatial_map',
                                              batch_idx=batch_idx)
+
+                # logits level
+                # kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine',mode='spatial_map',batch_idx=batch_idx)
 
                 # classification loss (only student logits)
                 logits_vit = logits_vit.squeeze(1)
