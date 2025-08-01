@@ -72,13 +72,31 @@ spurious corelations
 # Preparations
 ## voc2012
 
-```https://drive.google.com/file/d/1uh5bWXvLOpE-WZUUtO77uwCB4Qnh6d7X/view
+```
+
+https://drive.google.com/file/d/1uh5bWXvLOpE-WZUUtO77uwCB4Qnh6d7X/view
 
 tar -xzvf  VOCdevkit.tar.gz
 
 ```
 
-## Dataset description
+## coco 2014
+
+```
+http://images.cocodataset.org/zips/train2014.zip
+http://images.cocodataset.org/annotations/annotations_trainval2014.zip
+http://images.cocodataset.org/zips/val2014.zip
+
+unzip annotations_trainval2014.zip
+
+wget http://images.cocodataset.org/zips/val2014.zip
+wget http://images.cocodataset.org/zips/train2014.zip
+
+ python AnnotationToMask.py
+ 
+```
+
+## Custom Dataset description
 The dataset is captured in specific locations, resulting in low variability in background contexts
 
 **Train**
