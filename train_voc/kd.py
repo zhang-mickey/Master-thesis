@@ -99,7 +99,7 @@ def parse_args():
     # train
     parser.add_argument("--batch_size", type=int, default=8, help="training batch size")
 
-    parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
+    parser.add_argument("--lr", type=float, default=5e-6, help="learning rate")
     parser.add_argument("--warmup_lr", type=float, default=1e-3, help="learning rate")
 
     parser.add_argument("--img_size", type=int, default=512, help="the size of image")
@@ -116,7 +116,7 @@ def parse_args():
                         default=os.path.join(project_root, "model/model_classification_kd.pth"),
                         help="Path to save the trained model")
 
-    parser.add_argument("--num_epochs", type=int, default=3, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=10, help="epoch number")
     # parser.add_argument("--backbone", type=str, default="resnet101",
     #                     help="choose backone")
     # parser.add_argument("--backbone", type=str, default="resnet38d",
@@ -164,6 +164,7 @@ if __name__ == "__main__":
     class_names = ["bg", 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle',
                    'bus', 'car', 'cat', 'chair', 'cow', 'table', 'dog',
                    'horse', 'motorbike', 'person', 'plant', 'sheep', 'sofa', 'train', 'tvmonitor']
+
     print("Starting training...")
     args = parse_args()
     for key, value in vars(args).items():
@@ -249,10 +250,11 @@ if __name__ == "__main__":
                 featmap_vit = featmap_vit.view(featmap_vit.size(0), featmap_vit.size(1), -1)
 
                 # feature level
-                # kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine',mode='spatial',batch_idx=batch_idx)
+                kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine', mode='spatial',
+                                             batch_idx=batch_idx)
 
                 # logits level
-                kd_loss = compute_similarity(logits_vit, logits_resnet, metric='kl', mode='logits', batch_idx=batch_idx)
+                # kd_loss = compute_similarity(logits_vit, logits_resnet, metric='kl',mode='logits',batch_idx=batch_idx)
 
                 # classification loss (only student logits)
                 logits_vit = logits_vit.squeeze(1)
@@ -296,6 +298,8 @@ if __name__ == "__main__":
         torch.save(model_vit.state_dict(), save_path)
         torch.save(model_resnet50.state_dict(), save_resnet_path)
         print("Training complete! Model saved.")
+
+        plot_loss_accuracy(cls_loss_history, train_accuracies, save_loss_path, args.lr)
 
         model_vit.load_state_dict(torch.load(save_path))
 
@@ -356,12 +360,12 @@ if __name__ == "__main__":
         avg_test_resnet_loss = test_resnet_loss / len(test_loader)
         avg_test_resnet_accuracy = test_resnet_accuracy / len(test_loader)
 
-        precision = precision_score(test_ground_truth, test_predictions, zero_division=0)
-        precision_resnet = precision_score(test_ground_truth, test_predictions_resnet, zero_division=0)
+        precision = precision_score(test_ground_truth, test_predictions, average='micro', zero_division=0)
+        precision_resnet = precision_score(test_ground_truth, test_predictions_resnet, average='micro', zero_division=0)
 
         # recall = recall_score(test_ground_truth, test_predictions, zero_division=0)
-        f1 = f1_score(test_ground_truth, test_predictions, zero_division=0)
-        f1_resnet = f1_score(test_ground_truth, test_predictions_resnet, zero_division=0)
+        f1 = f1_score(test_ground_truth, test_predictions, average='micro', zero_division=0)
+        f1_resnet = f1_score(test_ground_truth, test_predictions_resnet, average='micro', zero_division=0)
         # conf_matrix = confusion_matrix(test_ground_truth, test_predictions)
         positive_count = sum(test_ground_truth)
         negative_count = len(test_ground_truth) - positive_count
@@ -496,10 +500,10 @@ if __name__ == "__main__":
                 featmap_vit = featmap_vit.view(featmap_vit.size(0), featmap_vit.size(1), -1)
 
                 # feature level
-                # kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine',mode='spatial',batch_idx=batch_idx)
+                kd_loss = compute_similarity(featmap_vit, featmap_resnet, metric='cosine',mode='spatial',batch_idx=batch_idx)
 
                 # logits level
-                kd_loss = compute_similarity(logits_vit, logits_resnet, metric='kl', mode='logits', batch_idx=batch_idx)
+                # kd_loss = compute_similarity(logits_vit, logits_resnet, metric='kl', mode='logits', batch_idx=batch_idx)
 
                 # classification loss (only student logits)
                 logits_vit = logits_vit.squeeze(1)

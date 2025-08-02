@@ -9,6 +9,7 @@ from lib.network.backbone import choose_backbone
 from lib.utils.augmentation import *
 import torch.nn.functional as F
 import math
+from sklearn.metrics import confusion_matrix
 
 # def reshape_transform(tensor, height=14, width=14):
 #     #(batch_size, num_patches, hidden_dim).
@@ -23,8 +24,10 @@ import math
 # reshape the output tensor from a Vision Transformer (ViT) model
 # (or similar transformer-based models) so that it can be visualized or processed
 # in a way similar to convolutional neural network (CNN) feature maps.
-class_list = ["bg", 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'table',
-              'dog', 'horse', 'motorbike', 'person', 'plant', 'sheep', 'sofa', 'train', 'tvmonitor']
+
+class_list = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle',
+              'bus', 'car', 'cat', 'chair', 'cow', 'table', 'dog',
+              'horse', 'motorbike', 'person', 'plant', 'sheep', 'sofa', 'train', 'tvmonitor']
 
 
 def reshape_transform(tensor, height=16, width=16):
@@ -793,7 +796,8 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
     for batch_idx, (image_ids, images, masks, labels) in enumerate(dataloader):
         B, C, h_orig, w_orig = images.shape
         images = images.to(device)
-        # if batch_idx==1:
+        # if batch_idx>=2:
+        #     break
         if True:
             for j in range(B):
                 scale_cams = []
@@ -801,8 +805,13 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                 image = images[j]
                 image_id = image_ids[j]
                 mask = masks[j]
+
                 gt_mask = mask.squeeze().cpu().numpy()
-                gt_mask = (gt_mask > 0.5).astype(np.float32)
+                # print(np.unique(gt_mask))
+                ignore_mask = (gt_mask == 255)
+                valid_mask = ~ignore_mask
+                gt_mask = (gt_mask > 0) & valid_mask
+                # gt_mask = (gt_mask > 0.5).astype(np.float32)
                 for scale in scales:
                     h_new, w_new = int(h_orig * scale), int(w_orig * scale)
                     image_resized = F.interpolate(image.unsqueeze(0), size=(h_new, w_new), mode='bilinear',
@@ -819,16 +828,17 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                     if scale != 1.0:  # No need to resize if scale is already 1.0
                         grayscale_cam = cv2.resize(grayscale_cam, (w_orig, h_orig), interpolation=cv2.INTER_LINEAR)
 
-                    pseudo_label = (grayscale_cam > threshold).astype(np.float32)
+                    pseudo_label = (grayscale_cam > threshold).astype(bool)
 
-                    intersection = np.logical_and(gt_mask, pseudo_label).sum()
-                    union = np.logical_or(gt_mask, pseudo_label).sum()
+                    intersection = np.logical_and(gt_mask, pseudo_label & valid_mask).sum()
+                    union = np.logical_or(gt_mask, pseudo_label & valid_mask).sum()
                     iou = intersection / (union + 1e-8)
 
                     scale_metrics[scale]['iou_sum'] += iou
                     scale_metrics[scale]['count'] += 1
                     scale_strs.append(str(scale))
                     scale_cams.append(grayscale_cam)
+
                 if isinstance(image_id, torch.Tensor):
                     img_id = image_id.item()
                 elif isinstance(image_id, str) and image_id.isdigit():
@@ -856,10 +866,12 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
 
                 # fused_cam=np.max(scale_cams,axis=0)
 
-                pseudo_label = (fused_cam > threshold).astype(np.float32)
+                pseudo_label = (fused_cam > threshold).astype(bool)
 
-                intersection = np.logical_and(gt_mask, pseudo_label).sum()
-                union = np.logical_or(gt_mask, pseudo_label).sum()
+                assert pseudo_label.shape == gt_mask.shape, f"Shape mismatch: pseudo {pseudo_label.shape}, mask {gt_mask.shape}"
+
+                intersection = np.logical_and(gt_mask, pseudo_label & valid_mask).sum()
+                union = np.logical_or(gt_mask, pseudo_label & valid_mask).sum()
                 iou = intersection / (union + 1e-8)
 
                 scale_metrics['avg']['iou_sum'] += iou
@@ -881,11 +893,11 @@ def generate_pseudo_labels(dataloader, model, target_layers, save_dir, threshold
                 ax[1].set_title('Class Activation Map (Avg)')
                 ax[1].axis('off')
 
-                ax[2].imshow(pseudo_label, cmap='gray')
+                ax[2].imshow(pseudo_label.astype(float), cmap='gray')
                 ax[2].set_title(f'Pseudo Mask (IoU: {iou:.2f})')
                 ax[2].axis('off')
 
-                ax[3].imshow(gt_mask, cmap='gray')
+                ax[3].imshow(gt_mask.astype(float), cmap='gray')
                 ax[3].set_title('Ground Truth Mask')
                 ax[3].axis('off')
 
