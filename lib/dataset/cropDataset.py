@@ -16,10 +16,12 @@ class CropDataset(Dataset):
                  non_smoke_dir=None,
                  ijmond_positive_dir=None,
                  ijmond_negative_dir=None,
+                 synthesis_positive_dir=None,
+                 synthesis_negative_dir=None,
                  test=False,
                  transform=None,
                  mask_transform=None,
-                 img_size=(1024, 1024),
+                 img_size=(512, 512),
                  backbone='sam',
                  ratio=0.1):
 
@@ -32,7 +34,8 @@ class CropDataset(Dataset):
 
         self.ijmond_positive_dir = ijmond_positive_dir
         self.ijmond_negative_dir = ijmond_negative_dir
-
+        self.synthesis_positive_dir = synthesis_positive_dir
+        self.synthesis_negative_dir = synthesis_negative_dir
         # # Load smoke images and masks
         # print("Image Dir:", self.image_dir)
         # print("Mask Dir:", self.mask_dir)
@@ -65,7 +68,7 @@ class CropDataset(Dataset):
                         sampled_with_mask = random.sample(all_with_mask, num_to_keep)
                         self.samples.extend(sampled_with_mask)
 
-        print("supervised smoke samples:", len(self.samples))
+        print("pixle-level supervised smoke samples:", len(self.samples))
 
         if self.non_smoke_dir:
             all_non_smoke = [
@@ -122,6 +125,30 @@ class CropDataset(Dataset):
                 })
         print("ijmond negative", len(self.samples))
 
+        if self.synthesis_positive_dir:
+            for img_name in sorted(os.listdir(synthesis_positive_dir)):
+                if img_name.startswith('.'): continue
+                img_path = os.path.join(synthesis_positive_dir, img_name)
+                self.samples.append({
+                    'image': img_path,
+                    'mask': None,
+                    'label': 1,
+                    'is_smoke': True
+                })
+        print("synthesis positive", len(self.samples))
+
+        if self.synthesis_negative_dir:
+            for img_name in sorted(os.listdir(synthesis_negative_dir)):
+                if img_name.startswith('.'): continue
+                img_path = os.path.join(synthesis_negative_dir, img_name)
+                self.samples.append({
+                    'image': img_path,
+                    'mask': None,
+                    'label': 0,
+                    'is_smoke': False
+                })
+        print("synthesis negative", len(self.samples))
+
         self.transform = transform or transforms.Compose([
             transforms.Resize(img_size),
             transforms.ToTensor(),
@@ -154,8 +181,8 @@ class CropDataset(Dataset):
         img = self.transform(img)
         mask = self.mask_transform(mask)
 
-        return img, torch.tensor(sample['label'], dtype=torch.long), \
-        os.path.splitext(os.path.basename(sample['image']))[0], mask
+        return os.path.splitext(os.path.basename(sample['image']))[0], img, mask, torch.tensor(sample['label'],
+                                                                                               dtype=torch.long),
 
 
 class mix_CropDataset(Dataset):

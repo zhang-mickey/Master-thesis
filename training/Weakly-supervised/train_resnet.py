@@ -81,6 +81,13 @@ def parse_args():
     parser.add_argument("--Dutch_positive_path", type=str,
                         default=os.path.join(project_root, "frames/manual_positive/"), help="path to Dutch")
 
+    parser.add_argument("--synthesis_negative_path", type=str,
+                        default=os.path.join(project_root, "frames/generated_anegative/"),
+                        help="path to synthesis data")
+    parser.add_argument("--synthesis_positive_path", type=str,
+                        default=os.path.join(project_root, "frames/generated_apositive/"),
+                        help="path to synthesis data")
+
     parser.add_argument("--crop_smoke_image_folder", type=str,
                         default=os.path.join(project_root, "smoke-segmentation.v5i.coco-segmentation/cropped_images/"),
                         help="Path to the cropped smoke image dataset folder")
@@ -117,13 +124,13 @@ def parse_args():
                         default=os.path.join(project_root, "model/model_pcm.pth"),
                         help="Path to save the trained model")
 
-    parser.add_argument("--num_epochs", type=int, default=2, help="epoch number")
+    parser.add_argument("--num_epochs", type=int, default=3, help="epoch number")
 
-    # parser.add_argument("--backbone", type=str, default="resnet50_raw",
-    #                     help="choose backone")
-
-    parser.add_argument("--backbone", type=str, default="resnet50",
+    parser.add_argument("--backbone", type=str, default="resnet50_raw",
                         help="choose backone")
+
+    # parser.add_argument("--backbone", type=str, default="resnet50",
+    #                     help="choose backone")
     parser.add_argument('--manual_seed', default=42, type=int, help='Manually set random seed')
 
     parser.add_argument('--threshold', default=0.3, type=float, help='Threshold for CAM')
@@ -153,6 +160,8 @@ if __name__ == "__main__":
             # non_smoke_dir=args.crop_non_smoke_folder,
             ijmond_positive_dir=args.Dutch_positive_path,
             ijmond_negative_dir=args.Dutch_negative_path,
+            synthesis_positive_dir=args.synthesis_positive_path,
+            synthesis_negative_dir=args.synthesis_negative_path,
             transform=image_transform,
             mask_transform=mask_transform,
             img_size=(args.crop_size, args.crop_size),
@@ -197,7 +206,7 @@ if __name__ == "__main__":
         print(f"Number of batches: {len(train_loader)}")
         print(f"Number of batches: {len(test_loader)}")
 
-    model = choose_backbone(args.backbone)
+    model = choose_backbone(args.backbone, num_classes=1)
     model = model.to(device)
     model.train()
     criterion = nn.BCEWithLogitsLoss()
